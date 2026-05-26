@@ -6,10 +6,11 @@ A standalone Python library for managing background worker processes with an int
 
 - **Isolated State**: Uses an internal SQLite database to track worker status, PIDs, and parameters.
 - **Process Management**: Start, stop, and monitor background Python scripts as independent processes.
-- **CLI Interface**: Manage and monitor workers directly from the terminal (see [CLI.md](CLI.md)).
-- **Security**: Built-in protection against path traversal attacks in worker types.
-- **Observability**: Per-worker file logging for easy debugging of subprocesses.
-- **Automatic Recovery**: Built-in logic to detect crashed workers and restart them on application boot.
+- **CLI Interface**: Manage and monitor workers with an intelligent discovery mechanism (see [CLI.md](CLI.md)).
+- **Security**: Built-in protection against path traversal attacks.
+- **Observability**: Per-worker file logging and robust process verification.
+- **Automatic Recovery**: Detects crashed workers and restarts them on application boot.
+- **Zombie Protection**: Robustly distinguishes between active and zombie processes using `psutil`.
 - **Clean Structure**: All application files (DB, lock, logs) are consolidated into a `.service` folder within the workers directory.
 - **Modern Tooling**: Fully compliant with `ruff` for linting and formatting.
 
@@ -35,8 +36,9 @@ from crazy_workers import WorkerManager
 
 # Initialize the manager
 # workers_dir: directory containing your worker .py scripts (default: 'workers')
+# create_dir: whether to create workers_dir if it doesn't exist (default: True)
 # This will automatically create a '.service' folder inside workers_dir for DB and logs.
-manager = WorkerManager(workers_dir='my_workers')
+manager = WorkerManager(workers_dir='my_workers', create_dir=True)
 ```
 
 ### Starting Workers

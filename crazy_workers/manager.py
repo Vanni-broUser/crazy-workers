@@ -15,8 +15,14 @@ logger = logging.getLogger('crazy_workers')
 
 
 class WorkerManager:
-  def __init__(self, workers_dir='workers'):
+  def __init__(self, workers_dir='workers', create_dir=True):
     self.workers_dir = workers_dir
+    if not os.path.isdir(workers_dir):
+      if create_dir:
+        os.makedirs(workers_dir, exist_ok=True)
+      else:
+        raise ValueError(f'Workers directory "{workers_dir}" does not exist.')
+
     self.service_dir = os.path.join(workers_dir, '.service')
     os.makedirs(self.service_dir, exist_ok=True)
 
