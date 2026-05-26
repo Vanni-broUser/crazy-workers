@@ -6,7 +6,12 @@ def is_process_running(pid):
   if pid is None:
     return False
   try:
-    return psutil.pid_exists(pid)
+    proc = psutil.Process(pid)
+    # A zombie process is technically in the PID table but not truly running.
+    # On some systems, is_running() might return True for zombies, so we check status.
+    return proc.is_running() and proc.status() != psutil.STATUS_ZOMBIE
+  except (psutil.NoSuchProcess, psutil.AccessDenied):
+    return False
   except Exception:
     return False
 

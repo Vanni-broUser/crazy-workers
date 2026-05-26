@@ -1,4 +1,5 @@
 import os
+import time
 from unittest.mock import MagicMock, patch
 import psutil
 
@@ -13,15 +14,54 @@ class TestWorkerManager(BaseTestCase):
     self.assertTrue(success)
     self.assertEqual(result['status'], 'RUNNING')
     self.assertIsNotNone(result['pid'])
-    self.assertTrue(psutil.pid_exists(result['pid']))
+
+    # Robust check: PID exists and matches our script
+    pid = result['pid']
+    self.assertTrue(psutil.pid_exists(pid))
+    proc = psutil.Process(pid)
+    self.assertTrue(proc.is_running())
+    cmdline = ' '.join(proc.cmdline())
+    self.assertIn('example_worker.py', cmdline)
 
     # Stop
     success, msg = self.manager.stop_worker('test_key')
     self.assertTrue(success)
 
+    # Wait for process to actually terminate
+    try:
+      proc.wait(timeout=5)
+    except psutil.TimeoutExpired:
+      pass
+    self.assertFalse(proc.is_running())
+
     workers = self.manager.list_workers()
     worker = next(w for w in workers if w['worker_key'] == 'test_key')
     self.assertEqual(worker['status'], 'STOPPED')
+
+  def test_library_process_robust_verification(self):
+    """Verifies that the process is not just 'active' by PID but actually working."""
+    params = {'duration': 5, 'worker_key': 'robust_test'}
+    success, result = self.manager.start_worker('example_worker', worker_key='robust_test', parameters=params)
+    self.assertTrue(success)
+
+    # Give it a moment to write to logs
+    time.sleep(1)
+
+    log_path = os.path.join(self.workers_path, '.service', 'logs', 'robust_test.log')
+    self.assertTrue(os.path.exists(log_path))
+
+    with open(log_path, 'r') as f:
+      logs = f.read()
+
+    self.assertIn('Worker robust_test starting', logs)
+    self.assertIn('Will run for 5 seconds', logs)
+
+    # Check process state via psutil
+    proc = psutil.Process(result['pid'])
+    self.assertTrue(proc.is_running())
+    self.assertNotEqual(proc.status(), psutil.STATUS_ZOMBIE)
+
+    self.manager.stop_worker('robust_test')
 
   def test_library_defaults(self):
     success, result = self.manager.start_worker('example_worker')
@@ -65,7 +105,7 @@ class TestWorkerManager(BaseTestCase):
     self.assertEqual(msg, 'Worker not found or not running')
 
   def test_library_is_process_running_exception(self):
-    with patch('psutil.pid_exists', side_effect=Exception('fail')):
+    with patch('crazy_workers.process.psutil.Process', side_effect=Exception('fail')):
       self.assertFalse(self.manager._is_process_running(123))
 
   def test_library_stop_timeout(self):
