@@ -6,6 +6,7 @@ A standalone Python library for managing background worker processes with an int
 
 - **Isolated State**: Uses an internal SQLite database to track worker status, PIDs, and parameters.
 - **Process Management**: Start, stop, and monitor background Python scripts as independent processes.
+- **CLI Interface**: Manage and monitor workers directly from the terminal (see [CLI.md](CLI.md)).
 - **Security**: Built-in protection against path traversal attacks in worker types.
 - **Observability**: Optional per-worker file logging for easy debugging of subprocesses.
 - **Automatic Recovery**: Built-in logic to detect crashed workers and restart them on application boot.

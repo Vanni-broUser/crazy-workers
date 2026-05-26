@@ -2,12 +2,14 @@ import unittest
 import os
 import sys
 from unittest.mock import patch, MagicMock
+from io import StringIO
 import psutil
 
 # Add current dir to path to find crazy_workers and example_app
 sys.path.append(os.path.dirname(__file__))
 
 from crazy_workers import WorkerManager, WorkerStatus
+from crazy_workers.cli import main as cli_main
 from example_app.app import create_app
 
 
@@ -138,6 +140,49 @@ class WorkerLibraryTestCase(unittest.TestCase):
     self.assertEqual(worker['status'], 'RUNNING')
     self.assertNotEqual(worker['pid'], 99999)
 
+  def test_library_path_traversal(self):
+    success, msg = self.manager.start_worker('bad', '../etc/passwd', {})
+    self.assertFalse(success)
+    self.assertEqual(msg, 'Invalid worker_type')
+
+  def test_library_log_dir_creation(self):
+    log_dir = 'test_logs_creation'
+    if os.path.exists(log_dir):
+      import shutil
+
+      shutil.rmtree(log_dir)
+
+    success, _ = self.manager.start_worker('log_test', 'example_worker', {}, log_dir=log_dir)
+    self.assertTrue(success)
+    self.assertTrue(os.path.exists(log_dir))
+    import shutil
+
+    shutil.rmtree(log_dir)
+
+  def test_library_stale_lock(self):
+    lock_path = f'{self.db_path}.recovery.lock'
+    with open(lock_path, 'w') as f:
+      f.write('999999')  # Non-existent PID
+
+    restarted = self.manager.recover_workers()
+    self.assertEqual(restarted, [])
+    self.assertFalse(os.path.exists(lock_path))
+
+  def test_library_empty_lock(self):
+    lock_path = f'{self.db_path}.recovery.lock'
+    with open(lock_path, 'w') as f:
+      f.write('')  # Empty lock file
+
+    restarted = self.manager.recover_workers()
+    self.assertEqual(restarted, [])
+    self.assertFalse(os.path.exists(lock_path))
+
+  def test_library_dispose_exception(self):
+    self.manager._active_processes['fail'] = MagicMock()
+    self.manager._active_processes['fail'].poll.side_effect = Exception('poll fail')
+    self.manager.dispose()
+    self.assertEqual(len(self.manager._active_processes), 0)
+
 
 class ExampleAppTestCase(unittest.TestCase):
   def setUp(self):
@@ -218,6 +263,70 @@ class ExampleAppTestCase(unittest.TestCase):
       # Stop error
       response = self.client.post('/workers/stop', json={'worker_key': 'no_key'})
       self.assertEqual(response.status_code, 400)
+
+
+class CliTestCase(unittest.TestCase):
+  def setUp(self):
+    self.db_path = f'test_cli_{self._testMethodName}.db'
+    self.workers_dir = os.path.join(os.path.dirname(__file__), 'example_app', 'workers')
+    self.manager = WorkerManager(self.db_path, self.workers_dir)
+
+  def tearDown(self):
+    self.manager.dispose()
+    if os.path.exists(self.db_path):
+      try:
+        os.remove(self.db_path)
+      except PermissionError:
+        import time
+
+        time.sleep(0.1)
+        try:
+          os.remove(self.db_path)
+        except PermissionError:
+          pass
+
+  def test_cli_list(self):
+    # Start a worker first
+    self.manager.start_worker('cli_test', 'example_worker', {})
+
+    argv = ['crazy-workers', '--db', self.db_path, '--workers-dir', self.workers_dir, 'list']
+    with patch('sys.argv', argv):
+      with patch('sys.stdout', new=StringIO()) as fake_out:
+        cli_main()
+        output = fake_out.getvalue()
+        self.assertIn('cli_test', output)
+        self.assertIn('RUNNING', output)
+
+  def test_cli_stop(self):
+    self.manager.start_worker('stop_test', 'example_worker', {})
+
+    argv = ['crazy-workers', '--db', self.db_path, '--workers-dir', self.workers_dir, 'stop', 'stop_test']
+    with patch('sys.argv', argv):
+      with patch('sys.stdout', new=StringIO()) as fake_out:
+        cli_main()
+        output = fake_out.getvalue()
+        self.assertIn('Success', output)
+
+    workers = self.manager.list_workers()
+    worker = next(w for w in workers if w['worker_key'] == 'stop_test')
+    self.assertEqual(worker['status'], 'STOPPED')
+
+  def test_cli_stop_error(self):
+    argv = ['crazy-workers', '--db', self.db_path, '--workers-dir', self.workers_dir, 'stop', 'non_existent']
+    with patch('sys.argv', argv):
+      with patch('sys.stderr', new=StringIO()) as fake_err:
+        with self.assertRaises(SystemExit) as cm:
+          cli_main()
+        self.assertEqual(cm.exception.code, 1)
+        self.assertIn('Error', fake_err.getvalue())
+
+  def test_cli_no_command(self):
+    argv = ['crazy-workers', '--db', self.db_path, '--workers-dir', self.workers_dir]
+    with patch('sys.argv', argv):
+      with patch('sys.stdout', new=StringIO()):
+        with self.assertRaises(SystemExit) as cm:
+          cli_main()
+        self.assertEqual(cm.exception.code, 1)
 
 
 if __name__ == '__main__':

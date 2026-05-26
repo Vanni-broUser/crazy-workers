@@ -16,6 +16,9 @@ dependencies = [
     "psutil>=5.9.0",
 ]
 
+[project.scripts]
+crazy-workers = "crazy_workers.cli:main"
+
 [project.optional-dependencies]
 dev = [
     "ruff",
