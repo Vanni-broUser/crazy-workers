@@ -209,14 +209,24 @@ class WorkerManager:
       try:
         with open(path, 'r') as f:
           old_pid_str = f.read().strip()
-          if not old_pid_str:
-            logger.warning('Found empty recovery lock. Breaking lock.')
-            try:
-              os.remove(path)
-            except OSError:
-              pass
-            return self._acquire_recovery_lock(path)
+
+        if not old_pid_str:
+          logger.warning('Found empty recovery lock. Breaking lock.')
+          try:
+            os.remove(path)
+          except OSError:
+            pass
+          return self._acquire_recovery_lock(path)
+
+        try:
           old_pid = int(old_pid_str)
+        except ValueError:
+          logger.warning(f'Found invalid recovery lock content: "{old_pid_str}". Breaking lock.')
+          try:
+            os.remove(path)
+          except OSError:
+            pass
+          return self._acquire_recovery_lock(path)
 
         if not psutil.pid_exists(old_pid):
           logger.warning(f'Found stale recovery lock from dead PID {old_pid}. Breaking lock.')
