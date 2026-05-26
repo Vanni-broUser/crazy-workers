@@ -12,8 +12,9 @@ pip install .
 
 ## Global Options
 
-- `--db`: Path to the SQLite database used by the library.
-- `--workers-dir`: Directory containing the worker scripts (`.py` files).
+- `--workers-dir`: Directory containing the worker scripts (`.py` files). Defaults to `workers`.
+
+Note: The database and logs are automatically managed within a `.service` folder inside the specified `--workers-dir`.
 
 ## Commands
 
@@ -22,7 +23,7 @@ pip install .
 Shows a list of all workers stored in the database with their current status and PID.
 
 ```bash
-crazy-workers --db /path/to/db.sqlite --workers-dir /path/to/workers list
+crazy-workers --workers-dir /path/to/workers list
 ```
 
 ### Stop Worker
@@ -30,7 +31,7 @@ crazy-workers --db /path/to/db.sqlite --workers-dir /path/to/workers list
 Stops a running worker by its unique key.
 
 ```bash
-crazy-workers --db /path/to/db.sqlite --workers-dir /path/to/workers stop <worker_key>
+crazy-workers --workers-dir /path/to/workers stop <worker_key>
 ```
 
 ## Example Usage
@@ -38,5 +39,5 @@ crazy-workers --db /path/to/db.sqlite --workers-dir /path/to/workers stop <worke
 If you are using the example application:
 
 ```bash
-crazy-workers --db instance/workers_internal.db --workers-dir example_app/workers list
+crazy-workers --workers-dir example_app/workers list
 ```

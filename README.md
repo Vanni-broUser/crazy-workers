@@ -8,9 +8,9 @@ A standalone Python library for managing background worker processes with an int
 - **Process Management**: Start, stop, and monitor background Python scripts as independent processes.
 - **CLI Interface**: Manage and monitor workers directly from the terminal (see [CLI.md](CLI.md)).
 - **Security**: Built-in protection against path traversal attacks in worker types.
-- **Observability**: Optional per-worker file logging for easy debugging of subprocesses.
+- **Observability**: Per-worker file logging for easy debugging of subprocesses.
 - **Automatic Recovery**: Built-in logic to detect crashed workers and restart them on application boot.
-- **Framework Agnostic**: Core logic is independent of any web framework, but easy to integrate (e.g., with Flask).
+- **Clean Structure**: All application files (DB, lock, logs) are consolidated into a `.service` folder within the workers directory.
 - **Modern Tooling**: Fully compliant with `ruff` for linting and formatting.
 
 ## Project Structure
@@ -21,8 +21,8 @@ A standalone Python library for managing background worker processes with an int
   - `storage.py`: SQLite database management.
 - `example_app/`: A dummy Flask application demonstrating library integration.
   - `workers/`: Example worker scripts.
-  - `logs/`: Directory for worker log files.
-- `tests.py`: Comprehensive test suite (94% coverage).
+    - `.service/`: Consolidated application state and logs.
+- `tests.py`: Comprehensive test suite.
 
 ## Usage
 
@@ -32,29 +32,43 @@ A standalone Python library for managing background worker processes with an int
 from crazy_workers import WorkerManager
 
 # Initialize the manager
-# db_path: path to the internal SQLite file
-# workers_dir: directory containing your worker .py scripts
-manager = WorkerManager(db_path='instance/workers.db', workers_dir='workers')
+# workers_dir: directory containing your worker .py scripts (default: 'workers')
+# This will automatically create a '.service' folder inside workers_dir for DB and logs.
+manager = WorkerManager(workers_dir='my_workers')
+```
 
-# Start a worker with logging
+### Starting Workers
+
+The `start_worker` method is simple and flexible:
+
+```python
+# Super simple: worker_key defaults to 'example_worker'
+# Logs will be saved to 'my_workers/.service/logs/example_worker.log'
+success, result = manager.start_worker('example_worker')
+
+# With custom key and parameters
 success, result = manager.start_worker(
-    worker_key='my_unique_task',
-    worker_type='example_worker', # maps to workers/example_worker.py
-    parameters={'param1': 'value1'},
-    log_dir='logs' # Optional: captures stdout/stderr to logs/my_unique_task.log
+    'example_worker', 
+    worker_key='my_custom_key',
+    parameters={'param1': 'value1'}
 )
 ```
 
-# List all workers
+### Process Verification
+
+The library ensures that processes are correctly started and tracked:
+- **Immediate Check**: Verifies the process is alive right after startup.
+- **OS Verification**: Uses `psutil` to confirm PIDs actually exist on the system.
+- **Cleanup**: Aggressively terminates orphans during manager disposal.
+
+### Monitoring & Control
 
 ```python
+# List all workers (returns status, PID, parameters, etc.)
 workers = manager.list_workers()
-```
 
-# Stop a worker
-
-```python
-manager.stop_worker('my_unique_task')
+# Stop a worker gracefully (with SIGTERM, then SIGKILL if needed)
+manager.stop_worker('my_custom_key')
 ```
 
 ### Integration with Flask
@@ -71,17 +85,8 @@ def startup():
 
 When using `crazy_workers` with a pre-fork server like **Gunicorn**, keep the following in mind:
 
-1.  **Atomic Recovery**: The library uses a file-based lock (`.recovery.lock`) to ensure that `recover_workers()` only runs once, even if called by multiple Gunicorn workers.
+1.  **Atomic Recovery**: The library uses a file-based lock (`.service/workers.db.recovery.lock`) to ensure that `recover_workers()` only runs once, even if called by multiple Gunicorn workers.
 2.  **Orphan Processes**: Background workers are started as subprocesses. If a Gunicorn worker is killed or recycled, the background workers it started will continue to run (becoming orphans). This is intended for persistence, as the next recovery cycle will re-attach to them or restart them if they crash.
-3.  **Best Practice**: For optimal performance and to avoid redundant recovery attempts, it is recommended to call `recover_workers()` in Gunicorn's `on_starting` hook rather than inside your Flask app factory:
-
-```python
-# gunicorn_config.py
-from my_app import manager
-
-def on_starting(server):
-    manager.recover_workers()
-```
 
 ## Development
 

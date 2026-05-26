@@ -7,8 +7,7 @@ from crazy_workers import WorkerManager
 
 def main():
   parser = argparse.ArgumentParser(description='Crazy Workers CLI')
-  parser.add_argument('--db', required=True, help='Path to the SQLite database')
-  parser.add_argument('--workers-dir', required=True, help='Directory containing worker scripts')
+  parser.add_argument('--workers-dir', default='workers', help='Directory containing worker scripts')
 
   subparsers = parser.add_subparsers(dest='command', help='Commands')
 
@@ -25,7 +24,7 @@ def main():
     parser.print_help()
     sys.exit(1)
 
-  manager = WorkerManager(args.db, args.workers_dir)
+  manager = WorkerManager(args.workers_dir)
 
   try:
     if args.command == 'list':

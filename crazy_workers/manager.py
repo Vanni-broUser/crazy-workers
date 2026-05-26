@@ -5,6 +5,7 @@ import psutil
 from sqlalchemy.exc import IntegrityError
 import subprocess
 import sys
+import time
 
 from .models import Worker, WorkerStatus
 from .storage import Storage
@@ -13,10 +14,16 @@ logger = logging.getLogger('crazy_workers')
 
 
 class WorkerManager:
-  def __init__(self, db_path, workers_dir):
-    self.storage = Storage(db_path)
+  def __init__(self, workers_dir='workers'):
     self.workers_dir = workers_dir
-    self.db_path = db_path
+    self.service_dir = os.path.join(workers_dir, '.service')
+    os.makedirs(self.service_dir, exist_ok=True)
+    
+    self.db_path = os.path.join(self.service_dir, 'workers.db')
+    self.storage = Storage(self.db_path)
+    self.logs_dir = os.path.join(self.service_dir, 'logs')
+    os.makedirs(self.logs_dir, exist_ok=True)
+    
     self._active_processes = {}  # worker_key -> Popen object
 
   def _is_process_running(self, pid):
@@ -27,11 +34,14 @@ class WorkerManager:
     except Exception:
       return False
 
-  def start_worker(self, worker_key, worker_type, parameters=None, env=None, log_dir=None):
-    # Security: Prevent path traversal
-    if '..' in worker_type or os.path.isabs(worker_type) or '/' in worker_type or '\\' in worker_type:
-      logger.error(f'Invalid worker_type: {worker_type}. Potential path traversal attempt.')
-      return False, 'Invalid worker_type'
+  def start_worker(self, worker_type, worker_key=None, parameters=None, env=None):
+    worker_key = worker_key or worker_type
+    
+    # Security: Prevent path traversal for both type and key
+    for name, val in [('worker_type', worker_type), ('worker_key', worker_key)]:
+      if '..' in val or os.path.isabs(val) or '/' in val or '\\' in val:
+        logger.error(f'Invalid {name}: {val}. Potential path traversal attempt.')
+        return False, f'Invalid {name}'
 
     parameters = parameters or {}
     session = self.storage.get_session()
@@ -76,21 +86,17 @@ class WorkerManager:
         child_env.update(env)
 
       # Logging setup
-      stdout_dest = subprocess.DEVNULL
-      stderr_dest = subprocess.DEVNULL
-      log_file = None
-
-      if log_dir:
-        try:
-          if not os.path.exists(log_dir):
-            os.makedirs(log_dir)
-          log_file_path = os.path.join(log_dir, f'{worker_key}.log')
-          log_file = open(log_file_path, 'a')
-          stdout_dest = log_file
-          stderr_dest = log_file
-          logger.info(f'Worker {worker_key} logging to {log_file_path}')
-        except Exception as e:
-          logger.error(f'Failed to open log file for worker {worker_key}: {e}')
+      log_file_path = os.path.join(self.logs_dir, f'{worker_key}.log')
+      try:
+        log_file = open(log_file_path, 'a')
+        stdout_dest = log_file
+        stderr_dest = log_file
+        logger.info(f'Worker {worker_key} logging to {log_file_path}')
+      except Exception as e:
+        logger.error(f'Failed to open log file for worker {worker_key}: {e}')
+        stdout_dest = subprocess.DEVNULL
+        stderr_dest = subprocess.DEVNULL
+        log_file = None
 
       logger.info(f'Starting worker {worker_key} ({worker_type})')
       try:
@@ -101,6 +107,15 @@ class WorkerManager:
           text=True,
           env=child_env,
         )
+
+        # Small grace period to detect immediate crashes
+        time.sleep(0.05)
+        if process.poll() is not None:
+          logger.error(f'Worker {worker_key} failed to start immediately (exit code: {process.returncode})')
+          worker.status = WorkerStatus.CRASHED
+          worker.pid = None
+          session.commit()
+          return False, 'Worker process failed to start'
 
         worker.pid = process.pid
         worker.status = WorkerStatus.RUNNING
@@ -232,17 +247,25 @@ class WorkerManager:
     for key, w_type, params, pid in to_process:
       if not self._is_process_running(pid):
         logger.info(f'Recovering worker {key}...')
-        success, _ = self.start_worker(key, w_type, params)
+        success, _ = self.start_worker(w_type, key, params)
         if success:
           restarted.append(key)
     return restarted
 
   def dispose(self):
-    # Ensure all tracked Popen objects are polled to avoid ResourceWarnings
-    for process in self._active_processes.values():
-      try:
-        process.poll()
-      except Exception:
-        pass
+    # Ensure all tracked Popen objects are cleaned up to avoid ResourceWarnings
+    for worker_key in list(self._active_processes.keys()):
+      process = self._active_processes.get(worker_key)
+      if process:
+        try:
+          if process.poll() is None:
+            process.terminate()
+            process.wait(timeout=2)
+        except Exception:
+          try:
+            process.kill()
+            process.wait()
+          except Exception:
+            pass
     self._active_processes.clear()
     self.storage.dispose()

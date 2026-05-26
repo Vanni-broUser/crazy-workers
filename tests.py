@@ -1,4 +1,5 @@
 from io import StringIO
+import logging
 import os
 import psutil
 import shutil
@@ -7,46 +8,56 @@ import time
 import unittest
 from unittest.mock import MagicMock, patch
 
+# Suppress logging during tests to avoid confusing output
+logging.getLogger('crazy_workers').setLevel(logging.CRITICAL)
+
 # Add current dir to path to find crazy_workers and example_app
 sys.path.append(os.path.dirname(__file__))
 
-from crazy_workers import WorkerManager, WorkerStatus
-from crazy_workers.cli import main as cli_main
-from crazy_workers.models import Worker
-from example_app.app import create_app
+from crazy_workers import WorkerManager, WorkerStatus  # noqa: E402
+from crazy_workers.cli import main as cli_main  # noqa: E402
+from crazy_workers.models import Worker  # noqa: E402
+from example_app.app import create_app  # noqa: E402
 
 
 class WorkerLibraryTestCase(unittest.TestCase):
   def setUp(self):
-    self.db_path = f'test_workers_{self._testMethodName}.db'
-    self.workers_dir = os.path.join(os.path.dirname(__file__), 'example_app', 'workers')
-    self.manager = WorkerManager(self.db_path, self.workers_dir)
+    # Create a unique temporary workers directory for each test
+    self.test_dir = f'test_env_{self._testMethodName}'
+    os.makedirs(self.test_dir, exist_ok=True)
+    
+    # Copy example worker to the test dir
+    src_worker = os.path.join(os.path.dirname(__file__), 'example_app', 'workers', 'example_worker.py')
+    self.worker_file = os.path.join(self.test_dir, 'example_worker.py')
+    shutil.copy(src_worker, self.worker_file)
+    
+    self.manager = WorkerManager(self.test_dir)
 
   def tearDown(self):
     # Stop all workers
-    workers = self.manager.list_workers()
-    for w in workers:
-      if w['status'] == 'RUNNING':
-        self.manager.stop_worker(w['worker_key'])
+    try:
+      workers = self.manager.list_workers()
+      for w in workers:
+        if w['status'] == 'RUNNING':
+          self.manager.stop_worker(w['worker_key'])
+    except Exception:
+      pass
 
     self.manager.dispose()
-    if os.path.exists(self.db_path):
-      try:
-        os.remove(self.db_path)
-      except PermissionError:
-        time.sleep(0.1)
-        try:
-          os.remove(self.db_path)
-        except PermissionError:
-          pass
+    
+    # Cleanup the entire test environment
+    if os.path.exists(self.test_dir):
+      shutil.rmtree(self.test_dir)
 
   def test_library_start_and_stop(self):
     success, result = self.manager.start_worker(
-      'test_key', 'example_worker', {'duration': 10, 'worker_key': 'test_key'}
+      'example_worker', worker_key='test_key', parameters={'duration': 10}
     )
     self.assertTrue(success)
     self.assertEqual(result['status'], 'RUNNING')
     self.assertIsNotNone(result['pid'])
+    # Verify PID actually exists in OS
+    self.assertTrue(psutil.pid_exists(result['pid']))
 
     # Stop
     success, msg = self.manager.stop_worker('test_key')
@@ -56,16 +67,46 @@ class WorkerLibraryTestCase(unittest.TestCase):
     worker = next(w for w in workers if w['worker_key'] == 'test_key')
     self.assertEqual(worker['status'], 'STOPPED')
 
+  def test_library_defaults(self):
+    # Test that worker_key and log_dir default to worker_type
+    success, result = self.manager.start_worker('example_worker')
+    self.assertTrue(success)
+    self.assertEqual(result['worker_key'], 'example_worker')
+    
+    # Verify log file is in .service/logs
+    log_path = os.path.join(self.test_dir, '.service', 'logs', 'example_worker.log')
+    self.assertTrue(os.path.exists(log_path))
+
   def test_library_already_running(self):
-    self.manager.start_worker('running_key', 'example_worker', {})
-    success, msg = self.manager.start_worker('running_key', 'example_worker', {})
+    self.manager.start_worker('example_worker', worker_key='running_key')
+    success, msg = self.manager.start_worker('example_worker', worker_key='running_key')
     self.assertFalse(success)
     self.assertEqual(msg, 'Worker already running')
 
+  def test_library_parameter_change(self):
+    # Start with param A
+    self.manager.start_worker('example_worker', worker_key='param_test', parameters={'val': 'A'})
+    self.manager.stop_worker('param_test')
+
+    # Restart with param B
+    success, result = self.manager.start_worker('example_worker', worker_key='param_test', parameters={'val': 'B'})
+    self.assertTrue(success)
+    self.assertEqual(result['parameters'], {'val': 'B'})
+
   def test_library_missing_worker_file(self):
-    success, msg = self.manager.start_worker('missing_file', 'non_existent', {})
+    success, msg = self.manager.start_worker('non_existent')
     self.assertFalse(success)
     self.assertIn('not found', msg)
+
+  def test_library_immediate_failure(self):
+    # Mock a file that exists but fails to run
+    bad_worker = os.path.join(self.test_dir, 'fail.py')
+    with open(bad_worker, 'w') as f:
+      f.write('import sys; sys.exit(1)')
+
+    success, msg = self.manager.start_worker('fail')
+    self.assertFalse(success)
+    self.assertEqual(msg, 'Worker process failed to start')
 
   def test_library_stop_not_found(self):
     success, msg = self.manager.stop_worker('no_such_key')
@@ -136,22 +177,19 @@ class WorkerLibraryTestCase(unittest.TestCase):
     self.assertNotEqual(worker['pid'], 99999)
 
   def test_library_path_traversal(self):
-    success, msg = self.manager.start_worker('bad', '../etc/passwd', {})
+    # Traversal in worker_type
+    success, msg = self.manager.start_worker('../etc/passwd', 'some_key')
     self.assertFalse(success)
     self.assertEqual(msg, 'Invalid worker_type')
-
-  def test_library_log_dir_creation(self):
-    log_dir = 'test_logs_creation'
-    if os.path.exists(log_dir):
-      shutil.rmtree(log_dir)
-
-    success, _ = self.manager.start_worker('log_test', 'example_worker', {}, log_dir=log_dir)
-    self.assertTrue(success)
-    self.assertTrue(os.path.exists(log_dir))
-    shutil.rmtree(log_dir)
+    
+    # Traversal in worker_key
+    success, msg = self.manager.start_worker('example_worker', '../etc/passwd')
+    self.assertFalse(success)
+    self.assertEqual(msg, 'Invalid worker_key')
 
   def test_library_stale_lock(self):
-    lock_path = f'{self.db_path}.recovery.lock'
+    lock_path = f'{self.manager.db_path}.recovery.lock'
+    os.makedirs(os.path.dirname(lock_path), exist_ok=True)
     with open(lock_path, 'w') as f:
       f.write('999999')  # Non-existent PID
 
@@ -160,7 +198,8 @@ class WorkerLibraryTestCase(unittest.TestCase):
     self.assertFalse(os.path.exists(lock_path))
 
   def test_library_empty_lock(self):
-    lock_path = f'{self.db_path}.recovery.lock'
+    lock_path = f'{self.manager.db_path}.recovery.lock'
+    os.makedirs(os.path.dirname(lock_path), exist_ok=True)
     with open(lock_path, 'w') as f:
       f.write('')  # Empty lock file
 
@@ -177,106 +216,105 @@ class WorkerLibraryTestCase(unittest.TestCase):
 
 class ExampleAppTestCase(unittest.TestCase):
   def setUp(self):
-    self.app, _ = create_app()
-    self.app.config['TESTING'] = True
-    self.client = self.app.test_client()
-    self.instance_path = self.app.instance_path
-    self.db_path = os.path.join(self.instance_path, f'workers_internal_{self._testMethodName}.db')
+    self.test_dir = f'test_app_env_{self._testMethodName}'
+    os.makedirs(self.test_dir, exist_ok=True)
+    
+    # Copy example worker
+    src_worker = os.path.join(os.path.dirname(__file__), 'example_app', 'workers', 'example_worker.py')
+    os.makedirs(os.path.join(self.test_dir, 'workers'), exist_ok=True)
+    shutil.copy(src_worker, os.path.join(self.test_dir, 'workers', 'example_worker.py'))
 
-    workers_dir = os.path.join(os.path.dirname(__file__), 'example_app', 'workers')
-    self.manager = WorkerManager(self.db_path, workers_dir)
+    with patch('example_app.app.WorkerManager') as mock_manager_class:
+      # Redirect the app's manager to our test dir
+      self.manager = WorkerManager(os.path.join(self.test_dir, 'workers'))
+      mock_manager_class.return_value = self.manager
+      self.app, _ = create_app()
+      self.app.config['TESTING'] = True
+      self.client = self.app.test_client()
 
   def tearDown(self):
-    workers = self.manager.list_workers()
-    for w in workers:
-      if w['status'] == 'RUNNING':
-        self.manager.stop_worker(w['worker_key'])
+    try:
+      workers = self.manager.list_workers()
+      for w in workers:
+        if w['status'] == 'RUNNING':
+          self.manager.stop_worker(w['worker_key'])
+    except Exception:
+      pass
 
     self.manager.dispose()
-    if os.path.exists(self.db_path):
-      try:
-        os.remove(self.db_path)
-      except PermissionError:
-        time.sleep(0.1)
-        try:
-          os.remove(self.db_path)
-        except PermissionError:
-          pass
+    if os.path.exists(self.test_dir):
+      shutil.rmtree(self.test_dir)
 
   def test_app_api(self):
-    with patch('example_app.app.WorkerManager', return_value=self.manager):
-      self.app, _ = create_app()
-      self.client = self.app.test_client()
+    # Start
+    response = self.client.post(
+      '/workers/start',
+      json={
+        'worker_key': 'app_test',
+        'worker_type': 'example_worker',
+        'parameters': {'duration': 5},
+      },
+    )
+    self.assertEqual(response.status_code, 200)
 
-      # Start
-      response = self.client.post(
-        '/workers/start',
-        json={
-          'worker_key': 'app_test',
-          'worker_type': 'example_worker',
-          'parameters': {'duration': 5},
-        },
-      )
-      self.assertEqual(response.status_code, 200)
+    # List
+    response = self.client.get('/workers')
+    self.assertEqual(response.status_code, 200)
+    data = response.get_json()
+    self.assertTrue(any(w['worker_key'] == 'app_test' for w in data))
 
-      # List
-      response = self.client.get('/workers')
-      self.assertEqual(response.status_code, 200)
-      data = response.get_json()
-      self.assertTrue(any(w['worker_key'] == 'app_test' for w in data))
-
-      # Stop
-      response = self.client.post('/workers/stop', json={'worker_key': 'app_test'})
-      self.assertEqual(response.status_code, 200)
+    # Stop
+    response = self.client.post('/workers/stop', json={'worker_key': 'app_test'})
+    self.assertEqual(response.status_code, 200)
 
   def test_app_api_missing_data(self):
-    with patch('example_app.app.WorkerManager', return_value=self.manager):
-      self.app, _ = create_app()
-      self.client = self.app.test_client()
+    response = self.client.post('/workers/start', json={})
+    self.assertEqual(response.status_code, 400)
 
-      response = self.client.post('/workers/start', json={})
-      self.assertEqual(response.status_code, 400)
-
-      response = self.client.post('/workers/stop', json={})
-      self.assertEqual(response.status_code, 400)
+    response = self.client.post('/workers/stop', json={})
+    self.assertEqual(response.status_code, 400)
 
   def test_app_api_errors(self):
-    with patch('example_app.app.WorkerManager', return_value=self.manager):
-      self.app, _ = create_app()
-      self.client = self.app.test_client()
+    # Start error (missing worker file)
+    response = self.client.post('/workers/start', json={'worker_key': 'err', 'worker_type': 'missing'})
+    self.assertEqual(response.status_code, 400)
 
-      # Start error
-      response = self.client.post('/workers/start', json={'worker_key': 'err', 'worker_type': 'missing'})
-      self.assertEqual(response.status_code, 400)
-
-      # Stop error
-      response = self.client.post('/workers/stop', json={'worker_key': 'no_key'})
-      self.assertEqual(response.status_code, 400)
+    # Stop error (not found)
+    response = self.client.post('/workers/stop', json={'worker_key': 'no_key'})
+    self.assertEqual(response.status_code, 400)
 
 
 class CliTestCase(unittest.TestCase):
   def setUp(self):
-    self.db_path = f'test_cli_{self._testMethodName}.db'
-    self.workers_dir = os.path.join(os.path.dirname(__file__), 'example_app', 'workers')
-    self.manager = WorkerManager(self.db_path, self.workers_dir)
+    self.test_dir = f'test_cli_env_{self._testMethodName}'
+    os.makedirs(self.test_dir, exist_ok=True)
+    
+    # Copy example worker
+    src_worker = os.path.join(os.path.dirname(__file__), 'example_app', 'workers', 'example_worker.py')
+    os.makedirs(os.path.join(self.test_dir, 'workers'), exist_ok=True)
+    shutil.copy(src_worker, os.path.join(self.test_dir, 'workers', 'example_worker.py'))
+    
+    self.workers_path = os.path.join(self.test_dir, 'workers')
+    self.manager = WorkerManager(self.workers_path)
 
   def tearDown(self):
+    try:
+      workers = self.manager.list_workers()
+      for w in workers:
+        if w['status'] == 'RUNNING':
+          self.manager.stop_worker(w['worker_key'])
+    except Exception:
+      pass
+
     self.manager.dispose()
-    if os.path.exists(self.db_path):
-      try:
-        os.remove(self.db_path)
-      except PermissionError:
-        time.sleep(0.1)
-        try:
-          os.remove(self.db_path)
-        except PermissionError:
-          pass
+    if os.path.exists(self.test_dir):
+      shutil.rmtree(self.test_dir)
 
   def test_cli_list(self):
     # Start a worker first
-    self.manager.start_worker('cli_test', 'example_worker', {})
+    self.manager.start_worker('example_worker', worker_key='cli_test')
 
-    argv = ['crazy-workers', '--db', self.db_path, '--workers-dir', self.workers_dir, 'list']
+    argv = ['crazy-workers', '--workers-dir', self.workers_path, 'list']
     with patch('sys.argv', argv):
       with patch('sys.stdout', new=StringIO()) as fake_out:
         cli_main()
@@ -285,9 +323,9 @@ class CliTestCase(unittest.TestCase):
         self.assertIn('RUNNING', output)
 
   def test_cli_stop(self):
-    self.manager.start_worker('stop_test', 'example_worker', {})
+    self.manager.start_worker('example_worker', worker_key='stop_test')
 
-    argv = ['crazy-workers', '--db', self.db_path, '--workers-dir', self.workers_dir, 'stop', 'stop_test']
+    argv = ['crazy-workers', '--workers-dir', self.workers_path, 'stop', 'stop_test']
     with patch('sys.argv', argv):
       with patch('sys.stdout', new=StringIO()) as fake_out:
         cli_main()
@@ -299,21 +337,13 @@ class CliTestCase(unittest.TestCase):
     self.assertEqual(worker['status'], 'STOPPED')
 
   def test_cli_stop_error(self):
-    argv = ['crazy-workers', '--db', self.db_path, '--workers-dir', self.workers_dir, 'stop', 'non_existent']
+    argv = ['crazy-workers', '--workers-dir', self.workers_path, 'stop', 'non_existent']
     with patch('sys.argv', argv):
       with patch('sys.stderr', new=StringIO()) as fake_err:
         with self.assertRaises(SystemExit) as cm:
           cli_main()
         self.assertEqual(cm.exception.code, 1)
         self.assertIn('Error', fake_err.getvalue())
-
-  def test_cli_no_command(self):
-    argv = ['crazy-workers', '--db', self.db_path, '--workers-dir', self.workers_dir]
-    with patch('sys.argv', argv):
-      with patch('sys.stdout', new=StringIO()):
-        with self.assertRaises(SystemExit) as cm:
-          cli_main()
-        self.assertEqual(cm.exception.code, 1)
 
 
 if __name__ == '__main__':

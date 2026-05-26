@@ -12,14 +12,12 @@ def create_app(config_override=None):
   app = Flask(__name__)
 
   # Configuration for the library
-  db_path = os.path.join(app.instance_path, 'workers_internal.db')
   workers_dir = os.path.join(os.path.dirname(__file__), 'workers')
 
   if not os.path.exists(app.instance_path):
     os.makedirs(app.instance_path)
 
-  manager = WorkerManager(db_path, workers_dir)
-  log_dir = os.path.join(os.path.dirname(__file__), 'logs')
+  manager = WorkerManager(workers_dir)
 
   @app.route('/workers/start', methods=['POST'])
   def start():
@@ -28,10 +26,10 @@ def create_app(config_override=None):
     w_type = data.get('worker_type')
     params = data.get('parameters', {})
 
-    if not key or not w_type:
-      return jsonify({'error': 'Missing key or type'}), 400
+    if not w_type:
+      return jsonify({'error': 'Missing worker_type'}), 400
 
-    success, result = manager.start_worker(key, w_type, params, log_dir=log_dir)
+    success, result = manager.start_worker(w_type, worker_key=key, parameters=params)
     if success:
       return jsonify(result), 200
     else:
