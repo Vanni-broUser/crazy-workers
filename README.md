@@ -45,9 +45,14 @@ success, result = manager.start_worker(
 ```
 
 # List all workers
+
+```python
 workers = manager.list_workers()
+```
 
 # Stop a worker
+
+```python
 manager.stop_worker('my_unique_task')
 ```
 
@@ -99,6 +104,7 @@ This project follows strict engineering standards:
 Run tests and check coverage:
 
 ```bash
+pip install .[dev]
 python -m unittest tests.py
 coverage run -m unittest tests.py && coverage report
 ```
