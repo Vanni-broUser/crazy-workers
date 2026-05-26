@@ -1,15 +1,18 @@
-import unittest
-import os
-import sys
-from unittest.mock import patch, MagicMock
 from io import StringIO
+import os
 import psutil
+import shutil
+import sys
+import time
+import unittest
+from unittest.mock import MagicMock, patch
 
 # Add current dir to path to find crazy_workers and example_app
 sys.path.append(os.path.dirname(__file__))
 
 from crazy_workers import WorkerManager, WorkerStatus
 from crazy_workers.cli import main as cli_main
+from crazy_workers.models import Worker
 from example_app.app import create_app
 
 
@@ -31,8 +34,6 @@ class WorkerLibraryTestCase(unittest.TestCase):
       try:
         os.remove(self.db_path)
       except PermissionError:
-        import time
-
         time.sleep(0.1)
         try:
           os.remove(self.db_path)
@@ -84,8 +85,6 @@ class WorkerLibraryTestCase(unittest.TestCase):
 
       # Manual inject running worker
       session = self.manager.storage.get_session()
-      from crazy_workers.models import Worker
-
       worker = Worker(
         worker_key='timeout_test', worker_type='example_worker', parameters={}, status=WorkerStatus.RUNNING, pid=12345
       )
@@ -102,8 +101,6 @@ class WorkerLibraryTestCase(unittest.TestCase):
     with patch('psutil.Process', side_effect=Exception('Generic error')):
       # Manual inject running worker
       session = self.manager.storage.get_session()
-      from crazy_workers.models import Worker
-
       worker = Worker(
         worker_key='exc_test', worker_type='example_worker', parameters={}, status=WorkerStatus.RUNNING, pid=12345
       )
@@ -119,8 +116,6 @@ class WorkerLibraryTestCase(unittest.TestCase):
   def test_library_recover(self):
     # Manually inject a "running" worker into the DB
     session = self.manager.storage.get_session()
-    from crazy_workers.models import Worker
-
     worker = Worker(
       worker_key='recover_test',
       worker_type='example_worker',
@@ -148,15 +143,11 @@ class WorkerLibraryTestCase(unittest.TestCase):
   def test_library_log_dir_creation(self):
     log_dir = 'test_logs_creation'
     if os.path.exists(log_dir):
-      import shutil
-
       shutil.rmtree(log_dir)
 
     success, _ = self.manager.start_worker('log_test', 'example_worker', {}, log_dir=log_dir)
     self.assertTrue(success)
     self.assertTrue(os.path.exists(log_dir))
-    import shutil
-
     shutil.rmtree(log_dir)
 
   def test_library_stale_lock(self):
@@ -206,8 +197,6 @@ class ExampleAppTestCase(unittest.TestCase):
       try:
         os.remove(self.db_path)
       except PermissionError:
-        import time
-
         time.sleep(0.1)
         try:
           os.remove(self.db_path)
@@ -277,8 +266,6 @@ class CliTestCase(unittest.TestCase):
       try:
         os.remove(self.db_path)
       except PermissionError:
-        import time
-
         time.sleep(0.1)
         try:
           os.remove(self.db_path)

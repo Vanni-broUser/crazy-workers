@@ -1,6 +1,7 @@
-from sqlalchemy import Column, Integer, String, JSON, Enum, DateTime, func
-from sqlalchemy.orm import DeclarativeBase
 import enum
+
+from sqlalchemy import JSON, Column, DateTime, Enum, Integer, String, func
+from sqlalchemy.orm import DeclarativeBase
 
 
 class WorkerStatus(enum.Enum):

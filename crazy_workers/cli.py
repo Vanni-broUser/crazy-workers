@@ -1,6 +1,7 @@
 import argparse
-import sys
 import json
+import sys
+
 from crazy_workers import WorkerManager
 
 

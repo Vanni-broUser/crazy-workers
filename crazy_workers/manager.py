@@ -1,10 +1,11 @@
+import json
+import logging
+import os
+import psutil
+from sqlalchemy.exc import IntegrityError
 import subprocess
 import sys
-import os
-import json
-import psutil
-import logging
-from sqlalchemy.exc import IntegrityError
+
 from .models import Worker, WorkerStatus
 from .storage import Storage
 
