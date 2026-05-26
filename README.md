@@ -19,10 +19,12 @@ A standalone Python library for managing background worker processes with an int
   - `manager.py`: Main `WorkerManager` class.
   - `models.py`: Internal SQLAlchemy models.
   - `storage.py`: SQLite database management.
+  - `process.py`: Process management utilities.
+  - `recovery.py`: Recovery and locking mechanisms.
 - `example_app/`: A dummy Flask application demonstrating library integration.
   - `workers/`: Example worker scripts.
     - `.service/`: Consolidated application state and logs.
-- `tests.py`: Comprehensive test suite.
+- `tests/`: Reorganized test suite mirroring the package structure.
 
 ## Usage
 
@@ -111,6 +113,6 @@ Run tests and check coverage:
 
 ```bash
 pip install .[dev]
-python -m unittest tests.py
-coverage run -m unittest tests.py && coverage report
+python -m unittest discover tests
+coverage run -m unittest discover tests && coverage report
 ```
