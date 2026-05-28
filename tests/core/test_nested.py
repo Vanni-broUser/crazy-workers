@@ -8,7 +8,10 @@ from tests.base import BaseTestCase
 class TestNestedWorkers(BaseTestCase):
   def test_nested_worker_spawning(self):
     # Copy required workers to the test directory
-    base_workers_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'example_app', 'workers')
+    base_workers_dir = os.path.join(
+      os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), 'example_app', 'workers'
+    )
+
     for worker_name in ['nested_worker.py', 'infinite_worker.py']:
       shutil.copy(os.path.join(base_workers_dir, worker_name), os.path.join(self.workers_path, worker_name))
 

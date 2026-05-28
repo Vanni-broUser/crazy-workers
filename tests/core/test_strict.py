@@ -13,7 +13,10 @@ class TestStrictResilience(BaseTestCase):
     # Copy all worker files for strict testing
     import shutil
 
-    base_workers_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'example_app', 'workers')
+    base_workers_dir = os.path.join(
+      os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), 'example_app', 'workers'
+    )
+
     for worker_file in os.listdir(base_workers_dir):
       if worker_file.endswith('.py'):
         shutil.copy(os.path.join(base_workers_dir, worker_file), self.workers_path)
@@ -57,7 +60,10 @@ class TestStrictResilience(BaseTestCase):
     # infinite_worker prints a start message. We'll use batch_worker for predictable output.
     import shutil
 
-    base_workers_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'example_app', 'workers')
+    base_workers_dir = os.path.join(
+      os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), 'example_app', 'workers'
+    )
+
     shutil.copy(os.path.join(base_workers_dir, 'batch_worker.py'), self.workers_path)
 
     worker_key = 'log_test'

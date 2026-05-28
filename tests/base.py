@@ -12,7 +12,10 @@ class BaseTestCase(unittest.TestCase):
     os.makedirs(self.test_dir, exist_ok=True)
 
     # Copy example worker to the test dir
-    src_worker = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'example_app', 'workers', 'example_worker.py')
+    src_worker = os.path.join(
+      os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'example_app', 'workers', 'example_worker.py'
+    )
+
     self.workers_path = os.path.join(self.test_dir, 'workers')
     os.makedirs(self.workers_path, exist_ok=True)
     self.worker_file = os.path.join(self.workers_path, 'example_worker.py')
