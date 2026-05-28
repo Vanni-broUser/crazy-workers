@@ -5,7 +5,7 @@ from rich.console import Console
 from rich.panel import Panel
 
 from ..core.manager import WorkerManager
-from .commands import list_workers, stop_worker
+from .commands import list_workers, start_worker, stop_worker
 from .discovery import resolve_workers_dir
 
 
@@ -20,10 +20,18 @@ def main():
   parser.add_argument('--workers-dir', help='Directory containing worker scripts')
 
   subparsers = parser.add_subparsers(dest='command', help='Commands')
+
+  # List command
   subparsers.add_parser('list', help='List all workers and their status')
 
-  stop_parser = subparsers.add_parser('stop', help='Stop a worker')
-  stop_parser.add_argument('worker_key', help='The key of the worker to stop')
+  # Start command
+  start_parser = subparsers.add_parser('start', help='Start a worker (interactive if type missing)')
+  start_parser.add_argument('worker_type', nargs='?', help='The type (filename) of worker to start')
+  start_parser.add_argument('--key', help='Optional custom key for the worker')
+
+  # Stop command
+  stop_parser = subparsers.add_parser('stop', help='Stop a worker (interactive if key missing)')
+  stop_parser.add_argument('worker_key', nargs='?', help='The key of the worker to stop')
 
   args = parser.parse_args()
 
@@ -42,6 +50,9 @@ def main():
     with WorkerManager(workers_dir, create_dir=False) as manager:
       if args.command == 'list':
         list_workers(manager)
+      elif args.command == 'start':
+        if not start_worker(manager, args.worker_type, worker_key=args.key):
+          sys.exit(1)
       elif args.command == 'stop':
         if not stop_worker(manager, args.worker_key):
           sys.exit(1)

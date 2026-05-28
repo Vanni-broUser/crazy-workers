@@ -177,8 +177,10 @@ class WorkerManager:
 
     with self.storage.session_scope() as session:
       worker = session.query(Worker).filter_by(worker_key=worker_key).first()
-      if not worker or worker.status != WorkerStatus.RUNNING:
-        return False, 'Worker not found or not running'
+      if not worker:
+        return False, 'Worker not found'
+      if worker.status != WorkerStatus.RUNNING:
+        return False, 'Worker is not running'
 
       logger.info(f'Stopping worker {worker_key} (PID {worker.pid})')
       process = self._active_processes.get(worker_key)

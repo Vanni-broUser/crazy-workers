@@ -17,15 +17,11 @@ A standalone Python library for managing background worker processes with an int
 ## Project Structure
 
 - `crazy_workers/`: The core library package.
-  - `manager.py`: Main `WorkerManager` class.
-  - `models.py`: Internal SQLAlchemy models.
-  - `storage.py`: SQLite database management.
-  - `process.py`: Process management utilities.
-  - `recovery.py`: Recovery and locking mechanisms.
+  - `core/`: Main `WorkerManager` and process engine.
+  - `cli/`: Command-line interface implementation.
+  - `persistence/`: SQLite database and SQLAlchemy models.
 - `example_app/`: A dummy Flask application demonstrating library integration.
-  - `workers/`: Example worker scripts.
-    - `.service/`: Consolidated application state and logs.
-- `tests/`: Reorganized test suite mirroring the package structure.
+- `tests/`: Modular test suite mirroring the package structure.
 
 ## Usage
 
@@ -67,12 +63,15 @@ The library ensures that processes are correctly started and tracked:
 
 ### Monitoring & Control
 
-```python
-# List all workers (returns status, PID, parameters, etc.)
-workers = manager.list_workers()
+```bash
+# List all workers
+crazy-workers list
 
-# Stop a worker gracefully (with SIGTERM, then SIGKILL if needed)
-manager.stop_worker('my_custom_key')
+# Start a worker (interactive selection if type is omitted)
+crazy-workers start
+
+# Stop a worker (interactive selection if key is omitted)
+crazy-workers stop
 ```
 
 ### Integration with Flask

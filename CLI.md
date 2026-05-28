@@ -32,11 +32,22 @@ If none of the above result in a valid existing directory, the CLI will error ou
 Shows a list of all workers stored in the database with their current status and PID.
 
 ```bash
-# Using discovery (e.g., if you are in the project root)
 crazy-workers list
+```
 
-# Using explicit path
-crazy-workers --workers-dir /path/to/workers list
+### Start Worker
+
+Starts a new worker process.
+
+```bash
+# Explicit type
+crazy-workers start example_worker
+
+# Interactive selection (lists available .py files)
+crazy-workers start
+
+# With custom key
+crazy-workers start example_worker --key my_worker_1
 ```
 
 ### Stop Worker
@@ -44,8 +55,16 @@ crazy-workers --workers-dir /path/to/workers list
 Stops a running worker by its unique key.
 
 ```bash
-crazy-workers stop <worker_key>
+# Explicit key
+crazy-workers stop my_custom_key
+
+# Interactive selection (lists only running workers)
+crazy-workers stop
 ```
+
+## Interactive Mode
+
+If you omit the required arguments for `start` or `stop`, the CLI will automatically enter **Interactive Mode**, showing you a numbered list of available options. This works in any terminal without additional configuration.
 
 ## Configuration via .env
 

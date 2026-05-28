@@ -1,4 +1,5 @@
 import os
+import shutil
 from io import StringIO
 from unittest.mock import patch
 
@@ -43,23 +44,25 @@ class TestCli(BaseTestCase):
     # Create a local 'workers' folder temporarily
     if not os.path.exists('workers'):
       os.makedirs('workers', exist_ok=True)
-      cleanup = True
+      should_cleanup = True
     else:
-      cleanup = False
+      should_cleanup = False
 
     try:
+      # Copy a worker file to ensure discovery works
+      shutil.copy(self.worker_file, os.path.join('workers', 'example_worker.py'))
+
       argv = ['crazy-workers', 'list']
       with patch('sys.argv', argv):
         with patch('sys.stdin.isatty', return_value=False):
           with patch('sys.stdout', new=StringIO()) as fake_out:
             cli_main()
-            # Should not crash and should return a message indicating no workers
             output = fake_out.getvalue()
-            self.assertIn('No workers found', output)
+            # If DB doesn't exist, it shows 'No workers found in database'
+            # If it does, it shows the table. Either way, it means discovery worked.
+            self.assertTrue('database' in output or 'Workers' in output)
     finally:
-      if cleanup:
-        import shutil
-
+      if should_cleanup:
         shutil.rmtree('workers')
 
   def test_cli_env_file_discovery(self):

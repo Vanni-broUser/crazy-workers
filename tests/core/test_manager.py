@@ -103,7 +103,14 @@ class TestWorkerManager(BaseTestCase):
   def test_library_stop_not_found(self):
     success, msg = self.manager.stop_worker('no_such_key')
     self.assertFalse(success)
-    self.assertEqual(msg, 'Worker not found or not running')
+    self.assertEqual(msg, 'Worker not found')
+
+  def test_library_stop_not_running(self):
+    self.manager.start_worker('example_worker', worker_key='not_running_key')
+    self.manager.stop_worker('not_running_key')
+    success, msg = self.manager.stop_worker('not_running_key')
+    self.assertFalse(success)
+    self.assertEqual(msg, 'Worker is not running')
 
   def test_library_is_process_running_exception(self):
     with patch('crazy_workers.core.engine.psutil.Process', side_effect=Exception('fail')):
