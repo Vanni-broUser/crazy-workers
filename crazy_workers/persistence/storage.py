@@ -1,3 +1,4 @@
+from contextlib import contextmanager
 from sqlalchemy import create_engine, event
 from sqlalchemy.orm import sessionmaker
 
@@ -27,6 +28,19 @@ class Storage:
 
   def get_session(self):
     return self.Session()
+
+  @contextmanager
+  def session_scope(self):
+    """Provides a transactional scope around a series of operations."""
+    session = self.get_session()
+    try:
+      yield session
+      session.commit()
+    except Exception:
+      session.rollback()
+      raise
+    finally:
+      session.close()
 
   def dispose(self):
     self.engine.dispose()

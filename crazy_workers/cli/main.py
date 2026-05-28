@@ -39,19 +39,15 @@ def main():
 
   workers_dir = resolve_workers_dir(args.workers_dir)
   try:
-    manager = WorkerManager(workers_dir, create_dir=False)
+    with WorkerManager(workers_dir, create_dir=False) as manager:
+      if args.command == 'list':
+        list_workers(manager)
+      elif args.command == 'stop':
+        if not stop_worker(manager, args.worker_key):
+          sys.exit(1)
   except ValueError as e:
     err_console.print(f'[bold red]Error:[/bold red] {e}')
     sys.exit(1)
-
-  try:
-    if args.command == 'list':
-      list_workers(manager)
-    elif args.command == 'stop':
-      if not stop_worker(manager, args.worker_key):
-        sys.exit(1)
-  finally:
-    manager.dispose()
 
 
 if __name__ == '__main__':

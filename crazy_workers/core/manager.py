@@ -26,6 +26,12 @@ class WorkerManager:
     self._initialize_storage(create_dir)
     self._active_processes = {}  # worker_key -> Popen object
 
+  def __enter__(self):
+    return self
+
+  def __exit__(self, exc_type, exc_val, exc_tb):
+    self.dispose()
+
   def _validate_workers_dir(self, create_dir):
     """Checks if the workers directory exists and creates it if allowed."""
     if not os.path.isdir(self.workers_dir):
@@ -60,8 +66,7 @@ class WorkerManager:
       return False, 'Invalid worker_type or worker_key'
 
     parameters = parameters or {}
-    session = self.storage.get_session()
-    try:
+    with self.storage.session_scope() as session:
       worker = session.query(Worker).filter_by(worker_key=worker_key).first()
 
       if self._check_already_running(worker, session):
@@ -74,13 +79,9 @@ class WorkerManager:
       worker_path = self._get_worker_script_path(worker_type)
       if not worker_path:
         worker.status = WorkerStatus.STOPPED
-        session.commit()
         return False, f'Worker file {worker_type}.py not found'
 
-      success, result = self._spawn_worker_process(worker, worker_path, parameters, env, session)
-      return success, result
-    finally:
-      session.close()
+      return self._spawn_worker_process(worker, worker_path, parameters, env, session)
 
   def _validate_inputs(self, worker_type, worker_key):
     for name, val in [('worker_type', worker_type), ('worker_key', worker_key)]:
@@ -174,8 +175,7 @@ class WorkerManager:
     if not self.storage:
       return False, 'System not initialized (database missing)'
 
-    session = self.storage.get_session()
-    try:
+    with self.storage.session_scope() as session:
       worker = session.query(Worker).filter_by(worker_key=worker_key).first()
       if not worker or worker.status != WorkerStatus.RUNNING:
         return False, 'Worker not found or not running'
@@ -191,21 +191,17 @@ class WorkerManager:
 
         worker.status = WorkerStatus.STOPPED
         worker.pid = None
-        session.commit()
         logger.info(f'Worker {worker_key} stopped.')
         return True, 'Worker stopped'
       except Exception as e:
         logger.error(f'Error stopping worker {worker_key}: {e}')
         return False, str(e)
-    finally:
-      session.close()
 
   def list_workers(self):
     if not self.storage:
       return []
 
-    session = self.storage.get_session()
-    try:
+    with self.storage.session_scope() as session:
       workers = session.query(Worker).all()
       for worker in workers:
         if worker.status == WorkerStatus.RUNNING:
@@ -215,10 +211,7 @@ class WorkerManager:
             )
             worker.status = WorkerStatus.STOPPED
             worker.pid = None
-            session.commit()
       return [w.to_dict() for w in workers]
-    finally:
-      session.close()
 
   def recover_workers(self):
     lock_path = f'{self.db_path}.recovery.lock'
@@ -238,12 +231,9 @@ class WorkerManager:
     if not self.storage:
       return []
 
-    session = self.storage.get_session()
-    try:
+    with self.storage.session_scope() as session:
       workers_to_restart = session.query(Worker).filter_by(status=WorkerStatus.RUNNING).all()
       to_process = [(w.worker_key, w.worker_type, w.parameters, w.pid) for w in workers_to_restart]
-    finally:
-      session.close()
 
     restarted = []
     for key, w_type, params, pid in to_process:
