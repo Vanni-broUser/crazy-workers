@@ -6,10 +6,10 @@ import sys
 import time
 from sqlalchemy.exc import IntegrityError
 
-from .models import Worker, WorkerStatus
-from .process import is_process_running, terminate_process
+from ..persistence.models import Worker, WorkerStatus
+from ..persistence.storage import Storage
+from .engine import is_process_running, terminate_process
 from .recovery import RecoveryLock
-from .storage import Storage
 
 logger = logging.getLogger('crazy_workers')
 
@@ -56,8 +56,6 @@ class WorkerManager:
       return False, 'System not initialized (database missing)'
 
     worker_key = worker_key or worker_type
-    # ... rest of method unchanged
-
     if not self._validate_inputs(worker_type, worker_key):
       return False, 'Invalid worker_type or worker_key'
 
@@ -177,7 +175,6 @@ class WorkerManager:
       return False, 'System not initialized (database missing)'
 
     session = self.storage.get_session()
-    # ...
     try:
       worker = session.query(Worker).filter_by(worker_key=worker_key).first()
       if not worker or worker.status != WorkerStatus.RUNNING:
@@ -217,7 +214,6 @@ class WorkerManager:
               f'Worker {worker.worker_key} found in RUNNING state but PID {worker.pid} is dead. Updating status.'
             )
             worker.status = WorkerStatus.STOPPED
-
             worker.pid = None
             session.commit()
       return [w.to_dict() for w in workers]
@@ -243,7 +239,6 @@ class WorkerManager:
       return []
 
     session = self.storage.get_session()
-    # ...
     try:
       workers_to_restart = session.query(Worker).filter_by(status=WorkerStatus.RUNNING).all()
       to_process = [(w.worker_key, w.worker_type, w.parameters, w.pid) for w in workers_to_restart]

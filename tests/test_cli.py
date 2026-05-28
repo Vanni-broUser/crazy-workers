@@ -2,7 +2,7 @@ import os
 from io import StringIO
 from unittest.mock import patch
 
-from crazy_workers.cli import main as cli_main
+from crazy_workers.cli.main import main as cli_main
 from tests.base import BaseTestCase
 
 

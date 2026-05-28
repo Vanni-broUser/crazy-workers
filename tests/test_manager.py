@@ -4,12 +4,13 @@ from unittest.mock import MagicMock, patch
 import psutil
 
 from crazy_workers import WorkerStatus
-from crazy_workers.models import Worker
+from crazy_workers.persistence.models import Worker
 from tests.base import BaseTestCase
 
 
 class TestWorkerManager(BaseTestCase):
   def test_library_start_and_stop(self):
+    # ... rest of method unchanged
     success, result = self.manager.start_worker('example_worker', worker_key='test_key', parameters={'duration': 10})
     self.assertTrue(success)
     self.assertEqual(result['status'], 'RUNNING')
@@ -105,11 +106,11 @@ class TestWorkerManager(BaseTestCase):
     self.assertEqual(msg, 'Worker not found or not running')
 
   def test_library_is_process_running_exception(self):
-    with patch('crazy_workers.process.psutil.Process', side_effect=Exception('fail')):
+    with patch('crazy_workers.core.engine.psutil.Process', side_effect=Exception('fail')):
       self.assertFalse(self.manager._is_process_running(123))
 
   def test_library_stop_timeout(self):
-    with patch('crazy_workers.process.psutil.Process') as mock_process_class:
+    with patch('crazy_workers.core.engine.psutil.Process') as mock_process_class:
       mock_proc = MagicMock()
       mock_proc.wait.side_effect = psutil.TimeoutExpired(3)
       mock_process_class.return_value = mock_proc
@@ -122,13 +123,13 @@ class TestWorkerManager(BaseTestCase):
       session.commit()
       session.close()
 
-      with patch('crazy_workers.process.is_process_running', return_value=True):
+      with patch('crazy_workers.core.engine.is_process_running', return_value=True):
         success, msg = self.manager.stop_worker('timeout_test')
         self.assertTrue(success)
         mock_proc.kill.assert_called_once()
 
   def test_library_stop_exception(self):
-    with patch('crazy_workers.process.psutil.Process', side_effect=Exception('Generic error')):
+    with patch('crazy_workers.core.engine.psutil.Process', side_effect=Exception('Generic error')):
       session = self.manager.storage.get_session()
       worker = Worker(
         worker_key='exc_test', worker_type='example_worker', parameters={}, status=WorkerStatus.RUNNING, pid=12345
@@ -137,7 +138,7 @@ class TestWorkerManager(BaseTestCase):
       session.commit()
       session.close()
 
-      with patch('crazy_workers.process.is_process_running', return_value=True):
+      with patch('crazy_workers.core.engine.is_process_running', return_value=True):
         success, msg = self.manager.stop_worker('exc_test')
         self.assertFalse(success)
         self.assertEqual(msg, 'Generic error')

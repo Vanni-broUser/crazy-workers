@@ -1,6 +1,4 @@
-from .manager import WorkerManager
-from .models import WorkerStatus
-
-__version__ = '0.1.0'
+from .core.manager import WorkerManager
+from .persistence.models import WorkerStatus
 
 __all__ = ['WorkerManager', 'WorkerStatus']

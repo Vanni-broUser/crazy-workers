@@ -2,7 +2,8 @@ import os
 from io import StringIO
 from unittest.mock import patch
 
-from crazy_workers.cli import load_env, save_to_env, resolve_workers_dir, main as cli_main
+from crazy_workers.cli.discovery import load_env, save_to_env, resolve_workers_dir
+from crazy_workers.cli.main import main as cli_main
 from tests.base import BaseTestCase
 
 
