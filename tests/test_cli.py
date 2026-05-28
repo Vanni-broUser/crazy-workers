@@ -1,4 +1,3 @@
-import json
 import os
 from io import StringIO
 from unittest.mock import patch
@@ -54,9 +53,9 @@ class TestCli(BaseTestCase):
         with patch('sys.stdin.isatty', return_value=False):
           with patch('sys.stdout', new=StringIO()) as fake_out:
             cli_main()
-            # Should not crash and should return empty list (or list from local workers)
+            # Should not crash and should return a message indicating no workers
             output = fake_out.getvalue()
-            self.assertEqual(output.strip(), '[]')
+            self.assertIn('No workers found', output)
     finally:
       if cleanup:
         import shutil
@@ -73,7 +72,8 @@ class TestCli(BaseTestCase):
         with patch('sys.stdout', new=StringIO()) as fake_out:
           cli_main()
           output = fake_out.getvalue()
-          self.assertIsInstance(json.loads(output), list)
+          # Rich output should at least contain the header or empty message
+          self.assertTrue('Workers' in output or 'No workers' in output)
     finally:
       if os.path.exists('.env'):
         os.remove('.env')
@@ -87,7 +87,7 @@ class TestCli(BaseTestCase):
         with patch('sys.stdout', new=StringIO()) as fake_out:
           cli_main()
           output = fake_out.getvalue()
-          self.assertEqual(output.strip(), '[]')
+          self.assertIn('No workers found', output)
 
   def test_cli_error_missing_dir(self):
     argv = ['crazy-workers', '--workers-dir', '/non/existent/path/flag', 'list']

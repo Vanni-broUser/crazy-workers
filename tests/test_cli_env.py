@@ -61,12 +61,16 @@ class TestCliEnv(BaseTestCase):
   def test_resolve_workers_dir_interactive_save(self):
     # Mock isatty to True
     with patch('sys.stdin.isatty', return_value=True):
-      # Mock readline directly on sys.stdin
-      with patch('sys.stdin.readline', return_value=f'{self.workers_path}\n'):
+      # Mock Prompt.ask from rich
+      with patch('rich.prompt.Prompt.ask', return_value=self.workers_path):
         with patch('sys.stdout', new=StringIO()) as fake_out:
-          resolved = resolve_workers_dir(None)
+          # Also patch stderr for this test if needed, but stdout is where Prompt.ask prints the question
+          with patch('sys.stderr', new=StringIO()):
+            resolved = resolve_workers_dir(None)
           self.assertEqual(os.path.abspath(resolved), os.path.abspath(self.workers_path))
-          self.assertIn('Saved CRAZY_WORKERS_DIR', fake_out.getvalue())
+          output = fake_out.getvalue()
+          self.assertIn('Saved', output)
+          self.assertIn('CRAZY_WORKERS_DIR', output)
 
           # Verify .env was written
           with open(self.env_file, 'r') as f:
@@ -74,10 +78,11 @@ class TestCliEnv(BaseTestCase):
 
   def test_resolve_workers_dir_interactive_invalid_dir(self):
     with patch('sys.stdin.isatty', return_value=True):
-      with patch('sys.stdin.readline', return_value='/non/existent/interactive/dir\n'):
+      with patch('rich.prompt.Prompt.ask', return_value='/non/existent/interactive/dir'):
         with patch('sys.stderr', new=StringIO()) as fake_err:
-          with self.assertRaises(SystemExit) as cm:
-            resolve_workers_dir(None)
+          with patch('sys.stdout', new=StringIO()):
+            with self.assertRaises(SystemExit) as cm:
+              resolve_workers_dir(None)
           self.assertEqual(cm.exception.code, 1)
           self.assertIn('is not a valid directory', fake_err.getvalue())
 

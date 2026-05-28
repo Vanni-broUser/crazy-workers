@@ -2,7 +2,14 @@ import argparse
 import os
 import sys
 
+from rich.console import Console
+from rich.panel import Panel
+from rich.prompt import Prompt
+from rich.table import Table
+
 from crazy_workers import WorkerManager
+
+console = Console()
 
 
 def load_env():
@@ -50,13 +57,15 @@ def save_to_env(key, value):
 
 def resolve_workers_dir(flag_dir):
   load_env()
+  console = Console()
+  err_console = Console(stderr=True)
 
   # 1. Flag priority (if provided explicitly in argv)
   if flag_dir:
     if os.path.isdir(flag_dir):
       return flag_dir
     else:
-      sys.stderr.write(f'Error: Directory "{flag_dir}" does not exist.\n')
+      err_console.print(f'[bold red]Error:[/bold red] Directory "{flag_dir}" does not exist.')
       sys.exit(1)
 
   # 2. Environment Variable
@@ -65,40 +74,45 @@ def resolve_workers_dir(flag_dir):
     if os.path.isdir(env_dir):
       return env_dir
     else:
-      sys.stderr.write(f'Error: Directory "{env_dir}" (from CRAZY_WORKERS_DIR) does not exist.\n')
+      err_console.print(f'[bold red]Error:[/bold red] Directory "{env_dir}" (from CRAZY_WORKERS_DIR) does not exist.')
       sys.exit(1)
 
   # 3. Interactive Prompt (if in a TTY)
   if sys.stdin.isatty():
-    sys.stdout.write('CRAZY_WORKERS_DIR not set in environment.\n')
-    sys.stdout.write('Please enter the path to your workers directory: ')
-    sys.stdout.flush()
-    user_input = sys.stdin.readline().strip()
+    console.print('[bold yellow]CRAZY_WORKERS_DIR not set in environment.[/bold yellow]')
+    user_input = Prompt.ask('Please enter the path to your workers directory')
     if user_input:
       if os.path.isdir(user_input):
         abs_path = os.path.abspath(user_input)
         try:
           save_to_env('CRAZY_WORKERS_DIR', abs_path)
-          sys.stdout.write(f'Saved CRAZY_WORKERS_DIR={abs_path} to .env\n')
+          console.print(f'[bold green]Saved CRAZY_WORKERS_DIR={abs_path} to .env[/bold green]')
         except Exception as e:
-          sys.stderr.write(f'Failed to save configuration: {e}\n')
+          err_console.print(f'[bold red]Failed to save configuration:[/bold red] {e}')
         return abs_path
       else:
-        sys.stderr.write(f'Error: "{user_input}" is not a valid directory.\n')
+        err_console.print(f'[bold red]Error:[/bold red] "{user_input}" is not a valid directory.')
         sys.exit(1)
 
   # 4. Local workers/ folder auto-detection (fallback)
   if os.path.isdir('workers'):
     return 'workers'
 
-  sys.stderr.write(
-    'Error: Workers directory not found. Please provide it via --workers-dir or set CRAZY_WORKERS_DIR.\n'
+  err_console.print(
+    '[bold red]Error:[/bold red] Workers directory not found. '
+    'Please provide it via --workers-dir or set CRAZY_WORKERS_DIR.'
   )
   sys.exit(1)
 
 
 def main():
-  parser = argparse.ArgumentParser(description='Crazy Workers CLI')
+  console = Console()
+  err_console = Console(stderr=True)
+
+  # Custom formatter to fix alignment issues with long options/placeholders
+  formatter = lambda prog: argparse.HelpFormatter(prog, max_help_position=32)
+
+  parser = argparse.ArgumentParser(description='Crazy Workers CLI', formatter_class=formatter)
   parser.add_argument('--workers-dir', help='Directory containing worker scripts')
 
   subparsers = parser.add_subparsers(dest='command', help='Commands')
@@ -113,6 +127,12 @@ def main():
   args = parser.parse_args()
 
   if not args.command:
+    console.print(
+      Panel.fit(
+        '[bold cyan]Crazy Workers CLI[/bold cyan]\n[dim]Manage your background processes with ease[/dim]',
+        border_style='cyan',
+      )
+    )
     parser.print_help()
     sys.exit(1)
 
@@ -120,22 +140,45 @@ def main():
   try:
     manager = WorkerManager(workers_dir, create_dir=False)
   except ValueError as e:
-    sys.stderr.write(f'Error: {e}\n')
+    err_console.print(f'[bold red]Error:[/bold red] {e}')
     sys.exit(1)
 
   try:
     if args.command == 'list':
-      import json
-
       workers = manager.list_workers()
-      sys.stdout.write(json.dumps(workers, indent=2) + '\n')
+      if not workers:
+        console.print('[yellow]No workers found in database.[/yellow]')
+      else:
+        table = Table(
+          title='[bold cyan]Active & Registered Workers[/bold cyan]', border_style='cyan', header_style='bold magenta'
+        )
+        table.add_column('Key', style='bold')
+        table.add_column('Type')
+        table.add_column('Status', justify='center')
+        table.add_column('PID', justify='right', style='green')
+
+        for w in workers:
+          status = w['status']
+          status_style = 'green' if status == 'RUNNING' else 'yellow'
+          if status in ['CRASHED', 'FAILED']:
+            status_style = 'bold red'
+          elif status == 'STOPPED':
+            status_style = 'dim'
+
+          table.add_row(
+            w['worker_key'],
+            w['worker_type'],
+            f'[{status_style}]{status}[/{status_style}]',
+            str(w['pid']) if w['pid'] else '-',
+          )
+        console.print(table)
 
     elif args.command == 'stop':
       success, message = manager.stop_worker(args.worker_key)
       if success:
-        sys.stdout.write(f'Success: {message}\n')
+        console.print(f'[bold green]Success:[/bold green] {message}')
       else:
-        sys.stderr.write(f'Error: {message}\n')
+        err_console.print(f'[bold red]Error:[/bold red] {message}')
         sys.exit(1)
   finally:
     manager.dispose()
