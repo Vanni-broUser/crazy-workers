@@ -28,6 +28,8 @@ def list_workers(manager):
         status_style = 'bold red'
       elif status == 'STOPPED':
         status_style = 'dim'
+      elif status == 'NEVER_STARTED':
+        status_style = 'cyan'
 
       table.add_row(
         str(i),

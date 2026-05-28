@@ -90,7 +90,7 @@ class TestCli(BaseTestCase):
         with patch('sys.stdout', new=StringIO()) as fake_out:
           cli_main()
           output = fake_out.getvalue()
-          self.assertIn('No workers found', output)
+          self.assertIn('NEVER_STARTED', output)
 
   def test_cli_error_missing_dir(self):
     argv = ['crazy-workers', '--workers-dir', '/non/existent/path/flag', 'list']

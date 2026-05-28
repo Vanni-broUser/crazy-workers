@@ -200,12 +200,28 @@ class WorkerManager:
         return False, str(e)
 
   def list_workers(self):
+    # 1. Get all .py files from workers_dir
+    try:
+      available_types = {f[:-3] for f in os.listdir(self.workers_dir) if f.endswith('.py')}
+    except Exception:
+      available_types = set()
+
     if not self.storage:
-      return []
+      # If no storage, return virtual workers for all found files
+      return [
+        {'worker_key': t, 'worker_type': t, 'parameters': {}, 'pid': None, 'status': WorkerStatus.NEVER_STARTED.value}
+        for t in sorted(available_types)
+      ]
 
     with self.storage.session_scope() as session:
-      workers = session.query(Worker).all()
-      for worker in workers:
+      # 2. Get registered workers from DB
+      db_workers = session.query(Worker).all()
+      registered_keys = set()
+      results = []
+
+      for worker in db_workers:
+        registered_keys.add(worker.worker_key)
+        # Update status if dead
         if worker.status == WorkerStatus.RUNNING:
           if not self._is_process_running(worker.pid):
             logger.warning(
@@ -213,7 +229,22 @@ class WorkerManager:
             )
             worker.status = WorkerStatus.STOPPED
             worker.pid = None
-      return [w.to_dict() for w in workers]
+        results.append(worker.to_dict())
+
+      # 3. Add virtual workers for files not in DB (using filename as key)
+      for w_type in sorted(available_types):
+        if w_type not in registered_keys:
+          results.append(
+            {
+              'worker_key': w_type,
+              'worker_type': w_type,
+              'parameters': {},
+              'pid': None,
+              'status': WorkerStatus.NEVER_STARTED.value,
+            }
+          )
+
+      return results
 
   def recover_workers(self):
     lock_path = f'{self.db_path}.recovery.lock'
@@ -247,19 +278,7 @@ class WorkerManager:
     return restarted
 
   def dispose(self):
-    for worker_key in list(self._active_processes.keys()):
-      process = self._active_processes.get(worker_key)
-      if process:
-        try:
-          if process.poll() is None:
-            process.terminate()
-            process.wait(timeout=2)
-        except Exception:
-          try:
-            process.kill()
-            process.wait()
-          except Exception:
-            pass
+    """Clean up resources like database connections. Does NOT kill background processes."""
     self._active_processes.clear()
     if self.storage:
       self.storage.dispose()

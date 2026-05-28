@@ -258,3 +258,52 @@ class TestWorkerManager(BaseTestCase):
     worker = next(w for w in workers if w['worker_key'] == 'sync_test')
     self.assertEqual(worker['status'], 'STOPPED')
     self.assertIsNone(worker['pid'])
+
+  def test_list_workers_filesystem_discovery(self):
+    # Create a new .py file that is NOT in DB
+    new_worker = os.path.join(self.workers_path, 'brand_new.py')
+    with open(new_worker, 'w') as f:
+      f.write('pass')
+    
+    workers = self.manager.list_workers()
+    worker = next(w for w in workers if w['worker_key'] == 'brand_new')
+    self.assertEqual(worker['status'], 'NEVER_STARTED')
+    self.assertEqual(worker['worker_type'], 'brand_new')
+
+  def test_list_workers_no_storage(self):
+    orig_storage = self.manager.storage
+    self.manager.storage = None
+    try:
+      workers = self.manager.list_workers()
+      # Should still find example_worker.py from filesystem
+      self.assertTrue(any(w['worker_key'] == 'example_worker' for w in workers))
+      self.assertEqual(workers[0]['status'], 'NEVER_STARTED')
+    finally:
+      self.manager.storage = orig_storage
+
+  def test_start_worker_no_storage(self):
+    orig_storage = self.manager.storage
+    self.manager.storage = None
+    try:
+      success, msg = self.manager.start_worker('example_worker')
+      self.assertFalse(success)
+      self.assertEqual(msg, 'System not initialized (database missing)')
+    finally:
+      self.manager.storage = orig_storage
+
+  def test_recover_workers_no_storage(self):
+    orig_storage = self.manager.storage
+    self.manager.storage = None
+    try:
+      res = self.manager.recover_workers()
+      self.assertEqual(res, [])
+    finally:
+      self.manager.storage = orig_storage
+
+  def test_spawn_worker_process_log_error(self):
+    # Mock logs_dir to a non-writable path to trigger the exception in log file opening
+    with patch.object(self.manager, 'logs_dir', '/non/existent/path/for/logs'):
+      success, result = self.manager.start_worker('example_worker', worker_key='log_err_test')
+      self.assertTrue(success)
+      # Should still start but with DEVNULL logs
+      self.assertEqual(result['status'], 'RUNNING')

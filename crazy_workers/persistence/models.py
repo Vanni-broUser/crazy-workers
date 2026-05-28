@@ -5,6 +5,7 @@ from sqlalchemy.orm import DeclarativeBase
 
 
 class WorkerStatus(enum.Enum):
+  NEVER_STARTED = 'NEVER_STARTED'
   STARTING = 'STARTING'
   RUNNING = 'RUNNING'
   STOPPED = 'STOPPED'
