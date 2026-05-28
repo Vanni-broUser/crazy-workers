@@ -24,7 +24,7 @@ def main():
   try:
     for i in range(num_children):
       child_key = f'child_{i}'
-      success, result = manager.start_worker(child_type, worker_key=child_key)
+      success, _ = manager.start_worker(child_type, worker_key=child_key)
       if success:
         pass
       else:

@@ -1,4 +1,3 @@
-import os
 from io import StringIO
 from unittest.mock import MagicMock, patch
 
@@ -49,9 +48,7 @@ class TestCliInteractive(BaseTestCase):
 
   def test_start_worker_interactive_selection(self):
     with patch('os.listdir', return_value=['w1.py', 'w2.py', 'not_python.txt']):
-      self.manager.start_worker = MagicMock(
-        return_value=(True, {'worker_key': 'w1', 'worker_type': 'w1', 'pid': 456})
-      )
+      self.manager.start_worker = MagicMock(return_value=(True, {'worker_key': 'w1', 'worker_type': 'w1', 'pid': 456}))
       # Select 'w1' (first in alphabetical order: w1, w2)
       with patch('rich.prompt.IntPrompt.ask', return_value=1):
         with patch('sys.stdout', new=StringIO()):

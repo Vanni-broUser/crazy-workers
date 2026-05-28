@@ -1,13 +1,17 @@
+import logging
 from contextlib import contextmanager
 from sqlalchemy import create_engine, event
 from sqlalchemy.orm import sessionmaker
 
 from .models import Base
 
+logger = logging.getLogger('crazy_workers')
+
 
 class Storage:
   def __init__(self, db_path):
     # sqlite:///path/to/db
+    self.db_path = db_path
     self.engine = create_engine(f'sqlite:///{db_path}', connect_args={'timeout': 30})
 
     @event.listens_for(self.engine, 'connect')
@@ -24,6 +28,11 @@ class Storage:
     self._ensure_tables()
 
   def _ensure_tables(self):
+    """Initializes the database schema."""
+    self._create_tables()
+
+  def _create_tables(self):
+    logger.info(f'Creating tables for database at {self.db_path}')
     Base.metadata.create_all(self.engine)
 
   def get_session(self):

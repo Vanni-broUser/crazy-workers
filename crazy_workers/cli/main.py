@@ -5,7 +5,7 @@ from rich.console import Console
 from rich.panel import Panel
 
 from ..core.manager import WorkerManager
-from .commands import list_workers, start_worker, stop_worker
+from .commands import list_workers, show_params, start_worker, stop_worker
 from .discovery import resolve_workers_dir
 
 
@@ -28,10 +28,15 @@ def main():
   start_parser = subparsers.add_parser('start', help='Start a worker (interactive if type missing)')
   start_parser.add_argument('worker_type', nargs='?', help='The type (filename) of worker to start')
   start_parser.add_argument('--key', help='Optional custom key for the worker')
+  start_parser.add_argument('--params', help='JSON string of parameters for the worker')
 
   # Stop command
   stop_parser = subparsers.add_parser('stop', help='Stop a worker (interactive if key missing)')
   stop_parser.add_argument('worker_key', nargs='?', help='The key of the worker to stop')
+
+  # Params command
+  params_parser = subparsers.add_parser('params', help='Show parameters for a worker')
+  params_parser.add_argument('worker_key', nargs='?', help='The key of the worker')
 
   args = parser.parse_args()
 
@@ -51,10 +56,23 @@ def main():
       if args.command == 'list':
         list_workers(manager)
       elif args.command == 'start':
-        if not start_worker(manager, args.worker_type, worker_key=args.key):
+        import json
+
+        params = None
+        if args.params:
+          try:
+            params = json.loads(args.params)
+          except json.JSONDecodeError:
+            err_console.print('[bold red]Error:[/bold red] Invalid JSON in --params')
+            sys.exit(1)
+
+        if not start_worker(manager, args.worker_type, worker_key=args.key, parameters=params):
           sys.exit(1)
       elif args.command == 'stop':
         if not stop_worker(manager, args.worker_key):
+          sys.exit(1)
+      elif args.command == 'params':
+        if not show_params(manager, args.worker_key):
           sys.exit(1)
   except ValueError as e:
     err_console.print(f'[bold red]Error:[/bold red] {e}')

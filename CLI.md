@@ -37,16 +37,16 @@ crazy-workers list
 
 ### Start Worker
 
-Starts a new worker process.
+Starts a new worker process. If no `--key` is provided, the key defaults to the worker type. You can run multiple instances of the same worker type simultaneously by providing different keys.
 
 ```bash
-# Explicit type
+# Explicit type (key defaults to 'example_worker')
 crazy-workers start example_worker
 
 # Interactive selection (lists available .py files)
 crazy-workers start
 
-# With custom key
+# With custom key (allows running another 'example_worker' even if one is already running)
 crazy-workers start example_worker --key my_worker_1
 ```
 

@@ -1,5 +1,4 @@
 import os
-import shutil
 from io import StringIO
 from unittest.mock import patch
 
@@ -41,45 +40,68 @@ class TestCli(BaseTestCase):
           self.assertIn('env_test', output)
 
   def test_cli_autodetect_discovery(self):
-    # Create a local 'workers' folder temporarily
-    if not os.path.exists('workers'):
-      os.makedirs('workers', exist_ok=True)
-      should_cleanup = True
-    else:
-      should_cleanup = False
+    # We mock isdir to return True only for 'workers' and abspath to return our test path
+    # To avoid recursion, we capture the original functions
+    original_isdir = os.path.isdir
+    original_abspath = os.path.abspath
+
+    def mocked_isdir(p):
+      if p == 'workers':
+        return True
+      return original_isdir(p)
+
+    def mocked_abspath(p):
+      if p == 'workers':
+        return self.workers_path
+      return original_abspath(p)
+
+    # Ensure the DB in self.workers_path is updated
+    from crazy_workers.persistence.storage import Storage
+
+    db_path = os.path.join(self.workers_path, '.service', 'workers.db')
+    Storage(db_path).dispose()
+
+    with patch('crazy_workers.cli.discovery.os.path.isdir', side_effect=mocked_isdir):
+      with patch('crazy_workers.cli.discovery.os.path.abspath', side_effect=mocked_abspath):
+        argv = ['crazy-workers', 'list']
+        with patch('sys.argv', argv):
+          with patch('sys.stdin.isatty', return_value=False):
+            with patch('sys.stdout', new=StringIO()) as fake_out:
+              cli_main()
+              output = fake_out.getvalue()
+              self.assertTrue('Active & Registered' in output or 'No workers' in output)
+
+  def test_cli_env_file_discovery(self):
+    env_path = os.path.abspath('.env_test')
+    with open(env_path, 'w') as f:
+      f.write(f'CRAZY_WORKERS_DIR={self.workers_path}\n')
+
+    # Ensure the DB in self.workers_path is updated
+    from crazy_workers.persistence.storage import Storage
+
+    db_path = os.path.join(self.workers_path, '.service', 'workers.db')
+    Storage(db_path).dispose()
 
     try:
-      # Copy a worker file to ensure discovery works
-      shutil.copy(self.worker_file, os.path.join('workers', 'example_worker.py'))
+      # Mock load_env to read our custom env file
+      def mock_load_env():
+        if os.path.exists(env_path):
+          with open(env_path, 'r') as f:
+            for line in f:
+              if '=' in line:
+                k, v = line.strip().split('=', 1)
+                os.environ[k] = v
 
-      argv = ['crazy-workers', 'list']
-      with patch('sys.argv', argv):
-        with patch('sys.stdin.isatty', return_value=False):
+      with patch('crazy_workers.cli.discovery.load_env', side_effect=mock_load_env):
+        argv = ['crazy-workers', 'list']
+        with patch('sys.argv', argv):
           with patch('sys.stdout', new=StringIO()) as fake_out:
             cli_main()
             output = fake_out.getvalue()
-            # If DB doesn't exist, it shows 'No workers found in database'
-            # If it does, it shows the table. Either way, it means discovery worked.
-            self.assertTrue('database' in output or 'Workers' in output)
+            self.assertTrue('Active & Registered' in output or 'No workers' in output)
     finally:
-      if should_cleanup:
-        shutil.rmtree('workers')
-
-  def test_cli_env_file_discovery(self):
-    with open('.env', 'w') as f:
-      f.write(f'CRAZY_WORKERS_DIR={self.workers_path}\n')
-
-    try:
-      argv = ['crazy-workers', 'list']
-      with patch('sys.argv', argv):
-        with patch('sys.stdout', new=StringIO()) as fake_out:
-          cli_main()
-          output = fake_out.getvalue()
-          # Rich output should at least contain the header or empty message
-          self.assertTrue('Workers' in output or 'No workers' in output)
-    finally:
-      if os.path.exists('.env'):
-        os.remove('.env')
+      if os.path.exists(env_path):
+        os.remove(env_path)
 
   def test_cli_flag_override(self):
     # Flag should override ENV

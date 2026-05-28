@@ -150,18 +150,32 @@ class TestWorkerManager(BaseTestCase):
         self.assertFalse(success)
         self.assertEqual(msg, 'Generic error')
 
+  def test_library_timestamps(self):
+    success, result = self.manager.start_worker('example_worker', worker_key='time_test')
+    self.assertTrue(success)
+    self.assertIsNotNone(result['last_started_at'])
+    self.assertIsNone(result['last_stopped_at'])
+
+    self.manager.stop_worker('time_test')
+    workers = self.manager.list_workers()
+    worker = next(w for w in workers if w['worker_key'] == 'time_test')
+    self.assertIsNotNone(worker['last_started_at'])
+    self.assertIsNotNone(worker['last_stopped_at'])
+
   def test_library_recover(self):
-    session = self.manager.storage.get_session()
-    worker = Worker(
-      worker_key='recover_test',
-      worker_type='example_worker',
-      parameters={'duration': 10},
-      status=WorkerStatus.RUNNING,
-      pid=99999,
-    )
-    session.add(worker)
-    session.commit()
-    session.close()
+    # Ensure no existing worker with same key
+    with self.manager.storage.session_scope() as session:
+      session.query(Worker).filter_by(worker_key='recover_test').delete()
+
+      worker = Worker(
+        worker_key='recover_test',
+        worker_type='example_worker',
+        parameters={'duration': 10},
+        status=WorkerStatus.RUNNING,
+        pid=99999,
+      )
+      session.add(worker)
+      session.commit()
 
     restarted = self.manager.recover_workers()
     self.assertIn('recover_test', restarted)
@@ -264,11 +278,11 @@ class TestWorkerManager(BaseTestCase):
     new_worker = os.path.join(self.workers_path, 'brand_new.py')
     with open(new_worker, 'w') as f:
       f.write('pass')
-    
+
     workers = self.manager.list_workers()
-    worker = next(w for w in workers if w['worker_key'] == 'brand_new')
+    worker = next(w for w in workers if w['worker_type'] == 'brand_new')
+    self.assertIsNone(worker['worker_key'])
     self.assertEqual(worker['status'], 'NEVER_STARTED')
-    self.assertEqual(worker['worker_type'], 'brand_new')
 
   def test_list_workers_no_storage(self):
     orig_storage = self.manager.storage
@@ -276,10 +290,26 @@ class TestWorkerManager(BaseTestCase):
     try:
       workers = self.manager.list_workers()
       # Should still find example_worker.py from filesystem
-      self.assertTrue(any(w['worker_key'] == 'example_worker' for w in workers))
-      self.assertEqual(workers[0]['status'], 'NEVER_STARTED')
+      worker = next(w for w in workers if w['worker_type'] == 'example_worker')
+      self.assertIsNone(worker['worker_key'])
+      self.assertEqual(worker['status'], 'NEVER_STARTED')
     finally:
       self.manager.storage = orig_storage
+
+  def test_start_multiple_same_type_different_keys(self):
+    success1, res1 = self.manager.start_worker('example_worker', worker_key='key1')
+    success2, res2 = self.manager.start_worker('example_worker', worker_key='key2')
+
+    self.assertTrue(success1)
+    self.assertTrue(success2)
+    self.assertEqual(res1['worker_type'], 'example_worker')
+    self.assertEqual(res2['worker_type'], 'example_worker')
+    self.assertEqual(res1['worker_key'], 'key1')
+    self.assertEqual(res2['worker_key'], 'key2')
+    self.assertNotEqual(res1['pid'], res2['pid'])
+
+    self.manager.stop_worker('key1')
+    self.manager.stop_worker('key2')
 
   def test_start_worker_no_storage(self):
     orig_storage = self.manager.storage
