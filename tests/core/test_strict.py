@@ -32,9 +32,8 @@ class TestStrictResilience(BaseTestCase):
     # 2. Kill it brutally
     proc = psutil.Process(pid)
     proc.kill()  # Cross-platform SIGKILL
+    proc.wait()  # Reap the zombie process
 
-    # Wait for OS to clean up
-    time.sleep(0.5)
     self.assertFalse(psutil.pid_exists(pid))
 
     # 3. Use a fresh manager to trigger recovery
