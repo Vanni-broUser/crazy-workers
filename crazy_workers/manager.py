@@ -17,28 +17,46 @@ logger = logging.getLogger('crazy_workers')
 class WorkerManager:
   def __init__(self, workers_dir='workers', create_dir=True):
     self.workers_dir = workers_dir
-    if not os.path.isdir(workers_dir):
-      if create_dir:
-        os.makedirs(workers_dir, exist_ok=True)
-      else:
-        raise ValueError(f'Workers directory "{workers_dir}" does not exist.')
+    self._validate_workers_dir(create_dir)
 
-    self.service_dir = os.path.join(workers_dir, '.service')
-    os.makedirs(self.service_dir, exist_ok=True)
-
-    self.db_path = os.path.join(self.service_dir, 'workers.db')
-    self.storage = Storage(self.db_path)
+    self.service_dir = os.path.join(self.workers_dir, '.service')
     self.logs_dir = os.path.join(self.service_dir, 'logs')
-    os.makedirs(self.logs_dir, exist_ok=True)
+    self.db_path = os.path.join(self.service_dir, 'workers.db')
 
+    self._initialize_storage(create_dir)
     self._active_processes = {}  # worker_key -> Popen object
+
+  def _validate_workers_dir(self, create_dir):
+    """Checks if the workers directory exists and creates it if allowed."""
+    if not os.path.isdir(self.workers_dir):
+      if create_dir:
+        os.makedirs(self.workers_dir, exist_ok=True)
+      else:
+        raise ValueError(f'Workers directory "{self.workers_dir}" does not exist.')
+
+  def _initialize_storage(self, create_dir):
+    """Sets up service directories and storage if allowed or if they already exist."""
+    if create_dir:
+      os.makedirs(self.service_dir, exist_ok=True)
+      os.makedirs(self.logs_dir, exist_ok=True)
+      self.storage = Storage(self.db_path)
+    else:
+      # If not allowed to create, only initialize storage if the DB already exists
+      if os.path.exists(self.db_path):
+        self.storage = Storage(self.db_path)
+      else:
+        self.storage = None
 
   def _is_process_running(self, pid):
     """Internal wrapper for process check."""
     return is_process_running(pid)
 
   def start_worker(self, worker_type, worker_key=None, parameters=None, env=None):
+    if not self.storage:
+      return False, 'System not initialized (database missing)'
+
     worker_key = worker_key or worker_type
+    # ... rest of method unchanged
 
     if not self._validate_inputs(worker_type, worker_key):
       return False, 'Invalid worker_type or worker_key'
@@ -155,7 +173,11 @@ class WorkerManager:
         log_file.close()
 
   def stop_worker(self, worker_key):
+    if not self.storage:
+      return False, 'System not initialized (database missing)'
+
     session = self.storage.get_session()
+    # ...
     try:
       worker = session.query(Worker).filter_by(worker_key=worker_key).first()
       if not worker or worker.status != WorkerStatus.RUNNING:
@@ -182,9 +204,22 @@ class WorkerManager:
       session.close()
 
   def list_workers(self):
+    if not self.storage:
+      return []
+
     session = self.storage.get_session()
     try:
       workers = session.query(Worker).all()
+      for worker in workers:
+        if worker.status == WorkerStatus.RUNNING:
+          if not self._is_process_running(worker.pid):
+            logger.warning(
+              f'Worker {worker.worker_key} found in RUNNING state but PID {worker.pid} is dead. Updating status.'
+            )
+            worker.status = WorkerStatus.STOPPED
+
+            worker.pid = None
+            session.commit()
       return [w.to_dict() for w in workers]
     finally:
       session.close()
@@ -204,7 +239,11 @@ class WorkerManager:
       return []
 
   def _do_recover(self):
+    if not self.storage:
+      return []
+
     session = self.storage.get_session()
+    # ...
     try:
       workers_to_restart = session.query(Worker).filter_by(status=WorkerStatus.RUNNING).all()
       to_process = [(w.worker_key, w.worker_type, w.parameters, w.pid) for w in workers_to_restart]
@@ -235,4 +274,5 @@ class WorkerManager:
           except Exception:
             pass
     self._active_processes.clear()
-    self.storage.dispose()
+    if self.storage:
+      self.storage.dispose()
