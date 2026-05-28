@@ -155,3 +155,4 @@ cython_debug/
 .ruff_cache/
 .recovery.lock
 example_app/logs/*.log
+example_app/workers/.service/

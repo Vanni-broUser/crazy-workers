@@ -110,7 +110,8 @@ def main():
   err_console = Console(stderr=True)
 
   # Custom formatter to fix alignment issues with long options/placeholders
-  formatter = lambda prog: argparse.HelpFormatter(prog, max_help_position=32)
+  def formatter(prog):
+    return argparse.HelpFormatter(prog, max_help_position=32)
 
   parser = argparse.ArgumentParser(description='Crazy Workers CLI', formatter_class=formatter)
   parser.add_argument('--workers-dir', help='Directory containing worker scripts')
