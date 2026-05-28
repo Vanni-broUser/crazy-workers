@@ -1,7 +1,7 @@
 import logging
 import os
 
-from ...persistence.storage import Storage
+from ...database.storage import Storage
 from ..engine import is_process_running
 from ..recovery import RecoveryLock
 from .starter import start_worker

@@ -4,7 +4,7 @@ from unittest.mock import MagicMock, patch
 import psutil
 
 from crazy_workers import WorkerStatus
-from crazy_workers.persistence.models import Worker
+from crazy_workers.database.schema import Worker
 from tests.base import BaseTestCase
 
 

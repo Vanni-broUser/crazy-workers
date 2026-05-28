@@ -19,7 +19,7 @@ A standalone Python library for managing background worker processes with an int
 - `crazy_workers/`: The core library package.
   - `core/`: Main `WorkerManager` and process engine.
   - `cli/`: Command-line interface implementation.
-  - `persistence/`: SQLite database and SQLAlchemy models.
+  - `database/`: SQLite database and SQLAlchemy schema.
 - `example_app/`: A dummy Flask application demonstrating library integration.
 - `tests/`: Modular test suite mirroring the package structure.
 

@@ -1,5 +1,5 @@
 import logging
-from ...persistence.models import Worker, WorkerStatus
+from ...database.schema import Worker, WorkerStatus
 from ..engine import is_process_running
 
 logger = logging.getLogger('crazy_workers')

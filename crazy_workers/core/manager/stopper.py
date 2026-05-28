@@ -1,7 +1,7 @@
 import logging
 from sqlalchemy import func
 
-from ...persistence.models import Worker, WorkerStatus
+from ...database.schema import Worker, WorkerStatus
 from ..engine import terminate_process
 
 logger = logging.getLogger('crazy_workers')

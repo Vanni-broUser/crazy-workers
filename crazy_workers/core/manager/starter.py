@@ -7,7 +7,7 @@ import time
 from sqlalchemy import func
 from sqlalchemy.exc import IntegrityError
 
-from ...persistence.models import Worker, WorkerStatus
+from ...database.schema import Worker, WorkerStatus
 
 logger = logging.getLogger('crazy_workers')
 

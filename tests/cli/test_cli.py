@@ -56,7 +56,7 @@ class TestCli(BaseTestCase):
       return original_abspath(p)
 
     # Ensure the DB in self.workers_path is updated
-    from crazy_workers.persistence.storage import Storage
+    from crazy_workers.database.storage import Storage
 
     db_path = os.path.join(self.workers_path, '.service', 'workers.db')
     Storage(db_path).dispose()
@@ -77,7 +77,7 @@ class TestCli(BaseTestCase):
       f.write(f'CRAZY_WORKERS_DIR={self.workers_path}\n')
 
     # Ensure the DB in self.workers_path is updated
-    from crazy_workers.persistence.storage import Storage
+    from crazy_workers.database.storage import Storage
 
     db_path = os.path.join(self.workers_path, '.service', 'workers.db')
     Storage(db_path).dispose()

@@ -3,7 +3,7 @@ from contextlib import contextmanager
 from sqlalchemy import create_engine, event
 from sqlalchemy.orm import sessionmaker
 
-from .models import Base
+from .schema import Base
 
 logger = logging.getLogger('crazy_workers')
 

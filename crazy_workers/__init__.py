@@ -1,4 +1,4 @@
 from .core.manager import WorkerManager
-from .persistence.models import WorkerStatus
+from .database.schema import WorkerStatus
 
 __all__ = ['WorkerManager', 'WorkerStatus']
