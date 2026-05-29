@@ -55,9 +55,8 @@ class TestCliEnv(BaseTestCase):
         with self.assertRaises(SystemExit) as cm:
           resolve_workers_dir(None)
         self.assertEqual(cm.exception.code, 1)
-        self.assertIn(
-          'Error: Directory "/non/existent/env/dir" (from CRAZY_WORKERS_DIR) does not exist', fake_err.getvalue()
-        )
+        output = ' '.join(fake_err.getvalue().split())
+        self.assertIn('Error: Directory "/non/existent/env/dir" (from CRAZY_WORKERS_DIR) does not exist', output)
 
   def test_resolve_workers_dir_interactive_save(self):
     # Ensure CRAZY_WORKERS_DIR is NOT in environment and no workers dir in CWD
