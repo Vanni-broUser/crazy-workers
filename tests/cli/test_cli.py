@@ -121,7 +121,8 @@ class TestCli(BaseTestCase):
         with self.assertRaises(SystemExit) as cm:
           cli_main()
         self.assertEqual(cm.exception.code, 1)
-        self.assertIn('Error: Directory "/non/existent/path/flag" does not exist', fake_err.getvalue())
+        output = ' '.join(fake_err.getvalue().split())
+        self.assertIn('Error: Directory "/non/existent/path/flag" does not exist', output)
 
   def test_cli_stop(self):
     self.manager.start_worker('example_worker', worker_key='stop_test')
