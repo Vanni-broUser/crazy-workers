@@ -1,6 +1,6 @@
 import os
-import time
 import psutil
+import time
 
 from crazy_workers import WorkerManager
 from crazy_workers.core.recovery import RecoveryLock

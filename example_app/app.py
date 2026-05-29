@@ -1,6 +1,7 @@
-from flask import Flask, jsonify, request
 import os
 import sys
+from flask import Flask, jsonify, request
+
 
 # Add parent directory to path so we can import crazy_workers if not installed
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))

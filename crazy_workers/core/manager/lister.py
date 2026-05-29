@@ -3,6 +3,7 @@ import os
 
 from ...database.schema import WorkerStatus
 
+
 logger = logging.getLogger('crazy_workers')
 
 

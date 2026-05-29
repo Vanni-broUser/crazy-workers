@@ -46,5 +46,12 @@ indent-width = 2
 quote-style = 'single'
 
 [tool.ruff.lint]
-select = ["E", "F", "T"]
+select = ["E", "F", "T", "I"]
 ignore = ["COM812"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["crazy_workers", "tests"]
+section-order = ["third-party", "first-party", "local-folder"]
+default-section = "third-party"
+lines-after-imports = 2
+

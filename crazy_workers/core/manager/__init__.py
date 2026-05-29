@@ -4,10 +4,11 @@ import os
 from ...database.storage import Storage
 from ..engine import is_process_running
 from ..recovery import RecoveryLock
-from .starter import start_worker
-from .stopper import stop_worker
 from .lister import list_workers
 from .recoverer import recover_workers
+from .starter import start_worker
+from .stopper import stop_worker
+
 
 logger = logging.getLogger('crazy_workers')
 

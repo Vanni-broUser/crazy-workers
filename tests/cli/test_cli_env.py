@@ -2,7 +2,7 @@ import os
 from io import StringIO
 from unittest.mock import patch
 
-from crazy_workers.cli.discovery import load_env, save_to_env, resolve_workers_dir
+from crazy_workers.cli.discovery import load_env, resolve_workers_dir, save_to_env
 from crazy_workers.cli.main import main as cli_main
 from tests.base import BaseTestCase
 
@@ -60,32 +60,36 @@ class TestCliEnv(BaseTestCase):
         )
 
   def test_resolve_workers_dir_interactive_save(self):
-    # Mock isatty to True
-    with patch('sys.stdin.isatty', return_value=True):
-      # Mock Prompt.ask from rich
-      with patch('rich.prompt.Prompt.ask', return_value=self.workers_path):
-        with patch('sys.stdout', new=StringIO()) as fake_out:
-          # Also patch stderr for this test if needed, but stdout is where Prompt.ask prints the question
-          with patch('sys.stderr', new=StringIO()):
-            resolved = resolve_workers_dir(None)
-          self.assertEqual(os.path.abspath(resolved), os.path.abspath(self.workers_path))
-          output = fake_out.getvalue()
-          self.assertIn('Saved', output)
-          self.assertIn('CRAZY_WORKERS_DIR', output)
+    # Ensure CRAZY_WORKERS_DIR is NOT in environment and no workers dir in CWD
+    with patch.dict(os.environ, {}, clear=True):
+      with patch('os.path.isdir', side_effect=lambda d: d == self.workers_path):
+        # Mock isatty to True
+        with patch('sys.stdin.isatty', return_value=True):
+          # Mock Prompt.ask where it is used (in crazy_workers.cli.discovery)
+          with patch('crazy_workers.cli.discovery.Prompt.ask', return_value=self.workers_path):
+            with patch('sys.stdout', new=StringIO()) as fake_out:
+              with patch('sys.stderr', new=StringIO()):
+                resolved = resolve_workers_dir(None)
+              self.assertEqual(os.path.abspath(resolved), os.path.abspath(self.workers_path))
+              output = fake_out.getvalue()
+              self.assertIn('Saved', output)
+              self.assertIn('CRAZY_WORKERS_DIR', output)
 
-          # Verify .env was written
-          with open(self.env_file, 'r') as f:
-            self.assertIn(f'CRAZY_WORKERS_DIR={os.path.abspath(self.workers_path)}', f.read())
+              # Verify .env was written
+              with open(self.env_file, 'r') as f:
+                self.assertIn(f'CRAZY_WORKERS_DIR={os.path.abspath(self.workers_path)}', f.read())
 
   def test_resolve_workers_dir_interactive_invalid_dir(self):
-    with patch('sys.stdin.isatty', return_value=True):
-      with patch('rich.prompt.Prompt.ask', return_value='/non/existent/interactive/dir'):
-        with patch('sys.stderr', new=StringIO()) as fake_err:
-          with patch('sys.stdout', new=StringIO()):
-            with self.assertRaises(SystemExit) as cm:
-              resolve_workers_dir(None)
-          self.assertEqual(cm.exception.code, 1)
-          self.assertIn('is not a valid directory', fake_err.getvalue())
+    with patch.dict(os.environ, {}, clear=True):
+      with patch('os.path.isdir', return_value=False):
+        with patch('sys.stdin.isatty', return_value=True):
+          with patch('crazy_workers.cli.discovery.Prompt.ask', return_value='/non/existent/interactive/dir'):
+            with patch('sys.stderr', new=StringIO()) as fake_err:
+              with patch('sys.stdout', new=StringIO()):
+                with self.assertRaises(SystemExit) as cm:
+                  resolve_workers_dir(None)
+              self.assertEqual(cm.exception.code, 1)
+              self.assertIn('is not a valid directory', fake_err.getvalue())
 
   def test_main_no_command(self):
     argv = ['crazy-workers']

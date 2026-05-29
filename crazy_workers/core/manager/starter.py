@@ -9,6 +9,7 @@ from sqlalchemy.exc import IntegrityError
 
 from ...database.schema import Worker, WorkerStatus
 
+
 logger = logging.getLogger('crazy_workers')
 
 

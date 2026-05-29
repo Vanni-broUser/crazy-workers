@@ -5,6 +5,7 @@ from sqlalchemy.orm import sessionmaker
 
 from .schema import Base
 
+
 logger = logging.getLogger('crazy_workers')
 
 

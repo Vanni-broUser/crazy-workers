@@ -3,6 +3,7 @@ import os
 import sys
 import warnings
 
+
 # Suppress logging during tests to avoid confusing output
 logging.getLogger('crazy_workers').setLevel(logging.CRITICAL)
 

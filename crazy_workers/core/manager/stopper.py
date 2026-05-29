@@ -4,6 +4,7 @@ from sqlalchemy import func
 from ...database.schema import Worker, WorkerStatus
 from ..engine import terminate_process
 
+
 logger = logging.getLogger('crazy_workers')
 
 

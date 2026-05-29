@@ -1,7 +1,7 @@
 import json
 import os
-from unittest.mock import patch
 from io import StringIO
+from unittest.mock import patch
 
 from crazy_workers.cli.main import main as cli_main
 from tests.base import BaseTestCase
@@ -46,7 +46,7 @@ class TestCliParams(BaseTestCase):
     self.manager.start_worker('example_worker', worker_key='show_test', parameters=params)
 
     with patch('sys.argv', ['crazy-workers', 'params', 'show_test']):
-      with patch('rich.console.Console.print') as mock_print:
+      with patch('rich.console.Console.print') as _:
         with patch('rich.console.Console.print_json') as mock_print_json:
           try:
             cli_main()
@@ -66,7 +66,7 @@ class TestCliParams(BaseTestCase):
     self.manager.start_worker('example_worker', worker_key='list_test', parameters=params)
 
     with patch('sys.argv', ['crazy-workers', 'list']):
-      with patch('rich.console.Console.print') as mock_print:
+      with patch('rich.console.Console.print') as _:
         with patch('rich.table.Table.add_row') as mock_add_row:
           try:
             cli_main()

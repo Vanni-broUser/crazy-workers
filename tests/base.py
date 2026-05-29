@@ -1,8 +1,8 @@
 import os
+import psutil
 import shutil
 import unittest
 import warnings
-import psutil
 
 from crazy_workers import WorkerManager
 

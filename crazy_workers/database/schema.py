@@ -1,6 +1,5 @@
 import enum
 from datetime import datetime
-
 from sqlalchemy import JSON, Column, DateTime, Enum, Integer, String, func
 from sqlalchemy.orm import DeclarativeBase
 
