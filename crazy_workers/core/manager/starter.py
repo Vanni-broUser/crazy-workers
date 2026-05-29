@@ -113,13 +113,17 @@ def _spawn_worker_process(manager, worker, worker_path, parameters, env, session
       env=child_env,
     )
 
-    time.sleep(0.05)
-    if process.poll() is not None:
+    try:
+      process.wait(timeout=0.05)
+      # If we reach here, it means the process exited immediately
       logger.error(f'Worker {worker.worker_key} failed to start immediately (exit code: {process.returncode})')
       worker.status = WorkerStatus.CRASHED
       worker.pid = None
       session.commit()
       return False, 'Worker process failed to start'
+    except subprocess.TimeoutExpired:
+      # This is the expected case: the process is still running after the timeout
+      pass
 
     worker.pid = process.pid
     worker.status = WorkerStatus.RUNNING

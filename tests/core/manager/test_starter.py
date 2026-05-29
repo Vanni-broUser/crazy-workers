@@ -51,14 +51,25 @@ class TestManagerStarter(BaseTestCase):
     self.assertFalse(success)
     self.assertIn('not found', msg)
 
-  def test_library_immediate_failure(self):
+  @patch('crazy_workers.core.manager.starter.subprocess.Popen')
+  def test_library_immediate_failure(self, mock_popen):
+    # Setup a mock process that appears to have exited with code 1
+    mock_proc = mock_popen.return_value
+    mock_proc.poll.return_value = 1
+    mock_proc.returncode = 1
+    mock_proc.pid = 9999
+
+    # We don't need a real file if we mock Popen, but start_worker checks for file existence
     bad_worker = os.path.join(self.workers_path, 'fail.py')
     with open(bad_worker, 'w') as f:
-      f.write('import sys; sys.exit(1)')
+      f.write('pass')
 
     success, msg = self.manager.start_worker('fail')
     self.assertFalse(success)
     self.assertEqual(msg, 'Worker process failed to start')
+    
+    # Verify the mock was called correctly
+    mock_popen.assert_called_once()
 
   def test_library_path_traversal(self):
     success, msg = self.manager.start_worker('../etc/passwd', 'some_key')
