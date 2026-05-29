@@ -66,6 +66,9 @@ class WorkerManager:
     return list_workers(self)
 
   def recover_workers(self):
+    if not os.path.exists(self.service_dir):
+      return []
+
     lock_path = f'{self.db_path}.recovery.lock'
     lock = RecoveryLock(lock_path)
 

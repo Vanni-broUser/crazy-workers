@@ -54,11 +54,21 @@ def create_app(config_override=None):
     workers = manager.list_workers()
     return jsonify(workers), 200
 
+  @app.route('/workers/params/<key>', methods=['GET'])
+  def get_params(key):
+    workers = manager.list_workers()
+    worker = next((w for w in workers if w['worker_key'] == key), None)
+    if worker:
+      return jsonify(worker['parameters']), 200
+    else:
+      return jsonify({'error': 'Worker not found'}), 404
+
+  # Automatic recovery on startup
+  manager.recover_workers()
+
   return app, manager
 
 
 if __name__ == '__main__':
   app, manager = create_app()
-  # Automatic recovery on startup
-  manager.recover_workers()
   app.run(debug=True)

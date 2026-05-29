@@ -61,6 +61,52 @@ class TestCliParams(BaseTestCase):
 
     self.manager.stop_worker('show_test')
 
+  def test_cli_params_command_interactive(self):
+    params = {'secret': 'data', 'id': 42}
+    self.manager.start_worker('example_worker', worker_key='interactive_test', parameters=params)
+
+    # Patch IntPrompt.ask to simulate selecting the first worker
+    with patch('sys.argv', ['crazy-workers', 'params']):
+      with patch('rich.console.Console.print') as _:
+        with patch('rich.prompt.IntPrompt.ask', return_value=1):
+          with patch('rich.console.Console.print_json') as mock_print_json:
+            try:
+              cli_main()
+            except SystemExit as e:
+              self.assertEqual(e.code, 0)
+
+            mock_print_json.assert_called_once()
+            args, _ = mock_print_json.call_args
+            self.assertIn('"secret": "data"', args[0])
+
+    self.manager.stop_worker('interactive_test')
+
+  def test_cli_params_command_not_found(self):
+    with patch('sys.argv', ['crazy-workers', 'params', 'non_existent_key']):
+      with patch('rich.console.Console.print') as _:
+        try:
+          cli_main()
+        except SystemExit as e:
+          self.assertEqual(e.code, 1)
+
+  def test_cli_params_command_no_registered_workers(self):
+    # Ensure no workers are running/registered
+    workers = self.manager.list_workers()
+    for w in workers:
+      if w['worker_key']:
+        self.manager.stop_worker(w['worker_key'])
+
+    with patch('sys.argv', ['crazy-workers', 'params']):
+      with patch('rich.console.Console.print') as mock_print:
+        try:
+          cli_main()
+        except SystemExit as e:
+          self.assertEqual(e.code, 1)  # CLI exits with 1 if show_params returns False
+
+        # Check if the "No registered workers" message was printed
+        found_msg = any('No registered workers' in str(call) for call in mock_print.call_args_list)
+        self.assertTrue(found_msg)
+
   def test_cli_list_with_enhanced_output(self):
     params = {'long_param_name_for_testing_truncation': 'value'}
     self.manager.start_worker('example_worker', worker_key='list_test', parameters=params)

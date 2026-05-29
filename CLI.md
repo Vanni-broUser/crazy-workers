@@ -48,6 +48,9 @@ crazy-workers start
 
 # With custom key (allows running another 'example_worker' even if one is already running)
 crazy-workers start example_worker --key my_worker_1
+
+# With parameters (must be a valid JSON string)
+crazy-workers start example_worker --params '{"duration": 10, "mode": "fast"}'
 ```
 
 ### Stop Worker
@@ -60,6 +63,18 @@ crazy-workers stop my_custom_key
 
 # Interactive selection (lists only running workers)
 crazy-workers stop
+```
+
+### Show Parameters
+
+Displays the parameters used when a worker was started. The output is formatted as JSON.
+
+```bash
+# Explicit key
+crazy-workers params my_custom_key
+
+# Interactive selection (lists all registered workers)
+crazy-workers params
 ```
 
 ## Interactive Mode

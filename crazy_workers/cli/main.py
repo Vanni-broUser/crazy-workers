@@ -4,7 +4,7 @@ from rich.console import Console
 from rich.panel import Panel
 
 from ..core.manager import WorkerManager
-from .commands import list_workers, show_params, start_worker, stop_worker
+from .commands import list_workers, restore_workers, show_params, start_worker, stop_worker
 from .discovery import resolve_workers_dir
 
 
@@ -36,6 +36,9 @@ def main():
   # Params command
   params_parser = subparsers.add_parser('params', help='Show parameters for a worker')
   params_parser.add_argument('worker_key', nargs='?', help='The key of the worker')
+
+  # Restore command
+  subparsers.add_parser('restore', help='Restore workers that should be running')
 
   args = parser.parse_args()
 
@@ -73,6 +76,8 @@ def main():
       elif args.command == 'params':
         if not show_params(manager, args.worker_key):
           sys.exit(1)
+      elif args.command == 'restore':
+        restore_workers(manager)
   except ValueError as e:
     err_console.print(f'[bold red]Error:[/bold red] {e}')
     sys.exit(1)
