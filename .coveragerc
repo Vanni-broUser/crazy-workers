@@ -1,9 +1,8 @@
 [run]
 source = .
-omit = 
-    tests.py
+omit =
+    tests/*
     venv/*
-    setup.py
 
 [report]
 show_missing = True

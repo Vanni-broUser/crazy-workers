@@ -21,16 +21,20 @@ def main():
   # Note: create_dir=False because we assume the environment is already set up
   manager = WorkerManager(workers_dir=workers_dir, create_dir=False)
 
+  sys.stdout.write(f'Spawning {num_children} children of type "{child_type}"\n')
+  sys.stdout.flush()
+
   try:
     for i in range(num_children):
       child_key = f'child_{i}'
       success, _ = manager.start_worker(child_type, worker_key=child_key)
       if success:
-        pass
+        sys.stdout.write(f'Started child: {child_key}\n')
       else:
-        pass
+        sys.stdout.write(f'Failed to start child: {child_key}\n')
       sys.stdout.flush()
 
+    sys.stdout.write('All children spawned. Waiting...\n')
     sys.stdout.flush()
     time.sleep(15)
   finally:

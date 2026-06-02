@@ -1,119 +1,211 @@
 # Crazy Workers
 
-A standalone Python library for managing background worker processes with an internal persistent state.
+A Python library for managing background worker processes with persistent state, automatic crash recovery, and a built-in CLI.
+
+[![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
 ## Features
 
-- **Isolated State**: Uses an internal SQLite database to track worker status, PIDs, and parameters.
-- **Process Management**: Start, stop, and monitor background Python scripts as independent processes.
-- **CLI Interface**: Manage and monitor workers with an intelligent discovery mechanism (see [CLI.md](CLI.md)).
-- **Security**: Built-in protection against path traversal attacks.
-- **Observability**: Per-worker file logging and robust process verification.
-- **Automatic Recovery**: Detects crashed workers and restarts them on application boot.
-- **Zombie Protection**: Robustly distinguishes between active and zombie processes using `psutil`.
-- **Clean Structure**: All application files (DB, lock, logs) are consolidated into a `.service` folder within the workers directory.
-- **Modern Tooling**: Fully compliant with `ruff` for linting and formatting.
+- **Persistent State** — SQLite database tracks worker status, PIDs, and parameters across restarts.
+- **Process Management** — Start, stop, and monitor background Python scripts as independent OS processes.
+- **Automatic Recovery** — Detects crashed workers and restarts them on application boot.
+- **Child Process Control** — On stop, terminates unmanaged subprocesses while preserving independently-managed nested workers.
+- **CLI Interface** — Manage workers from the terminal with interactive prompts and auto-discovery (see [CLI.md](CLI.md)).
+- **Security** — Built-in protection against path traversal in worker type and key names.
+- **Observability** — Per-worker file logging; all service files (DB, lock, logs) live in a `.service/` folder inside your workers directory.
+- **Zombie Protection** — Distinguishes active processes from zombies using `psutil`.
+- **Gunicorn-safe** — File-based lock prevents concurrent recovery runs across multiple workers.
 
-## Project Structure
+## Installation
 
-- `crazy_workers/`: The core library package.
-  - `core/`: Main `WorkerManager` and process engine.
-  - `cli/`: Command-line interface implementation.
-  - `database/`: SQLite database and SQLAlchemy schema.
-- `example_app/`: A dummy Flask application demonstrating library integration.
-- `tests/`: Modular test suite mirroring the package structure.
+```bash
+pip install crazy-workers
+```
 
-## Usage
+Or from source:
 
-### Basic Setup
+```bash
+git clone https://github.com/Vanni-broUser/crazy-workers
+cd crazy-workers
+pip install .
+```
+
+## Quick Start
+
+### 1. Create a worker script
+
+```python
+# workers/my_worker.py
+import json, sys, time
+
+params = json.loads(sys.argv[1]) if len(sys.argv) > 1 else {}
+duration = params.get('duration', 60)
+
+for _ in range(duration):
+    time.sleep(1)
+```
+
+### 2. Manage it from Python
 
 ```python
 from crazy_workers import WorkerManager
 
-# Initialize the manager
-# workers_dir: directory containing your worker .py scripts (default: 'workers')
-# create_dir: whether to create workers_dir if it doesn't exist (default: True)
-# This will automatically create a '.service' folder inside workers_dir for DB and logs.
-manager = WorkerManager(workers_dir='my_workers', create_dir=True)
-```
+manager = WorkerManager('workers')
 
-### Starting Workers
-
-The `start_worker` method is simple and flexible:
-
-```python
-# Super simple: worker_key defaults to 'example_worker'
-# Logs will be saved to 'my_workers/.service/logs/example_worker.log'
-success, result = manager.start_worker('example_worker')
-
-# With custom key and parameters
+# Start
 success, result = manager.start_worker(
-    'example_worker', 
-    worker_key='my_custom_key',
-    parameters={'param1': 'value1'}
+    'my_worker',
+    worker_key='job_1',
+    parameters={'duration': 30},
 )
+print(result['pid'])   # OS process ID
+print(result['status'])  # 'RUNNING'
+
+# List
+for w in manager.list_workers():
+    print(w['worker_key'], w['status'])
+
+# Stop
+manager.stop_worker('job_1')
+
+# Recover crashed workers (call on app startup)
+restarted = manager.recover_workers()
+
+manager.dispose()  # releases DB connection; does NOT kill workers
 ```
 
-### Process Verification
-
-The library ensures that processes are correctly started and tracked:
-- **Immediate Check**: Verifies the process is alive right after startup.
-- **OS Verification**: Uses `psutil` to confirm PIDs actually exist on the system.
-- **Cleanup**: Aggressively terminates orphans during manager disposal.
-
-### Monitoring & Control
+### 3. Or from the CLI
 
 ```bash
-# List all workers
 crazy-workers list
-
-# Start a worker (interactive selection if type is omitted)
-crazy-workers start
-
-# Stop a worker (interactive selection if key is omitted)
-crazy-workers stop
+crazy-workers start my_worker --key job_1 --params '{"duration": 30}'
+crazy-workers stop job_1
+crazy-workers restore
 ```
 
-### Integration with Flask
+See [CLI.md](CLI.md) for full CLI documentation.
 
-See `example_app/app.py` for a full example. Key integration point:
+## API Reference
+
+### `WorkerManager(workers_dir, create_dir=True)`
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `workers_dir` | `str` | `'workers'` | Directory containing worker `.py` scripts |
+| `create_dir` | `bool` | `True` | Create `workers_dir` and `.service/` if they don't exist |
+
+### `start_worker(worker_type, worker_key=None, parameters=None, env=None)`
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `worker_type` | `str` | — | Filename (without `.py`) of the worker script |
+| `worker_key` | `str` | `worker_type` | Unique identifier; allows multiple instances of the same type |
+| `parameters` | `dict` | `{}` | JSON-serializable dict passed as `sys.argv[1]` to the worker |
+| `env` | `dict` | `None` | Extra environment variables injected into the worker process |
+
+Returns `(bool, dict | str)` — `(True, worker_dict)` on success, `(False, error_message)` on failure.
+
+### `stop_worker(worker_key)`
+
+Gracefully terminates the worker (SIGTERM → SIGKILL after timeout). Returns `(bool, str)`.
+
+### `list_workers()`
+
+Returns a list of worker dicts including RUNNING, STOPPED, CRASHED, and NEVER_STARTED (filesystem-discovered) workers.
+
+### `recover_workers()`
+
+Restarts any worker whose DB status is RUNNING but whose process is dead. Uses a file lock to prevent concurrent recovery. Returns a list of restarted keys.
+
+### `dispose()`
+
+Closes the database connection and clears internal process references. Does **not** kill background workers — they continue running independently.
+
+## Worker Script Contract
+
+A worker receives its parameters as a JSON string in `sys.argv[1]`:
 
 ```python
-@app.before_first_request # or during app factory
-def startup():
-    manager.recover_workers()
+import json, sys
+
+params = json.loads(sys.argv[1]) if len(sys.argv) > 1 else {}
+# ... do work ...
 ```
 
-## Concurrency & Gunicorn
+## Project Structure
 
-When using `crazy_workers` with a pre-fork server like **Gunicorn**, keep the following in mind:
+```
+crazy_workers/       # Library package
+  core/              # WorkerManager, process engine, recovery lock
+  cli/               # CLI entry point, commands, discovery
+  database/          # SQLAlchemy schema and SQLite storage
+example_app/         # Flask demo application
+  app.py
+  workers/           # Example worker scripts
+tests/
+  core/              # Unit tests for core modules
+  cli/               # Unit tests for CLI modules
+  database/          # Unit tests for storage layer
+  integration/       # Full-stack integration tests (real processes)
+  app/               # Tests for the example Flask app
+```
 
-1.  **Atomic Recovery**: The library uses a file-based lock (`.service/workers.db.recovery.lock`) to ensure that `recover_workers()` only runs once, even if called by multiple Gunicorn workers.
-2.  **Orphan Processes**: Background workers are started as subprocesses. If a Gunicorn worker is killed or recycled, the background workers it started will continue to run (becoming orphans). This is intended for persistence, as the next recovery cycle will re-attach to them or restart them if they crash.
+## Flask Integration
+
+```python
+from crazy_workers import WorkerManager
+
+def create_app():
+    app = Flask(__name__)
+    manager = WorkerManager('workers')
+
+    @app.route('/workers/start', methods=['POST'])
+    def start():
+        data = request.json
+        success, result = manager.start_worker(
+            data['worker_type'],
+            worker_key=data.get('worker_key'),
+            parameters=data.get('parameters', {}),
+        )
+        return (jsonify(result), 200) if success else (jsonify({'error': result}), 400)
+
+    manager.recover_workers()  # restart any crashed workers on boot
+    return app
+```
+
+See `example_app/app.py` for a complete example.
+
+## Gunicorn / Multi-Process Servers
+
+When using a pre-fork server like Gunicorn:
+
+- **Recovery is atomic** — a file lock (`.service/workers.db.recovery.lock`) ensures `recover_workers()` runs once even when multiple workers boot simultaneously.
+- **Workers outlive their parent** — if a Gunicorn worker is recycled, background processes keep running. The next recovery cycle re-attaches or restarts them.
 
 ## Development
 
-### Requirements
-
-- Python 3.10+
-- `sqlalchemy`
-- `psutil`
-- `flask` (only for the example app)
-
-### Standards (AI.md)
-
-This project follows strict engineering standards:
-- **Indentation**: 2 spaces.
-- **Quotes**: Single quotes.
-- **Formatting**: `ruff format .`
-- **Linting**: `ruff check .`
-
-### Testing
-
-Run tests and check coverage:
+### Setup
 
 ```bash
-pip install .[dev]
-python -m unittest discover tests
-coverage run -m unittest discover tests && coverage report
+git clone https://github.com/Vanni-broUser/crazy-workers
+cd crazy-workers
+pip install -e .[dev]
 ```
+
+### Commands
+
+```bash
+# Lint and format
+ruff check . --fix && ruff format .
+
+# Run tests
+pytest
+
+# Run tests with coverage
+coverage run -m pytest && coverage report
+```
+
+### Standards
+
+See [AI.md](AI.md) for the full coding and testing standards used in this project.

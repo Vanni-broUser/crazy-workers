@@ -7,13 +7,12 @@ from crazy_workers.cli.main import main as cli_main
 from tests.base import BaseTestCase
 
 
-class TestCliEnv(BaseTestCase):
+class TestDiscovery(BaseTestCase):
   def setUp(self):
     super().setUp()
     self.env_file = '.env'
     if os.path.exists(self.env_file):
       os.remove(self.env_file)
-    # Isolate environment variables
     self.env_patcher = patch.dict(os.environ, {})
     self.env_patcher.start()
 
@@ -59,22 +58,16 @@ class TestCliEnv(BaseTestCase):
         self.assertIn('Error: Directory "/non/existent/env/dir" (from CRAZY_WORKERS_DIR) does not exist', output)
 
   def test_resolve_workers_dir_interactive_save(self):
-    # Ensure CRAZY_WORKERS_DIR is NOT in environment and no workers dir in CWD
     with patch.dict(os.environ, {}, clear=True):
       with patch('os.path.isdir', side_effect=lambda d: d == self.workers_path):
-        # Mock isatty to True
         with patch('sys.stdin.isatty', return_value=True):
-          # Mock Prompt.ask where it is used (in crazy_workers.cli.discovery)
           with patch('crazy_workers.cli.discovery.Prompt.ask', return_value=self.workers_path):
             with patch('sys.stdout', new=StringIO()) as fake_out:
               with patch('sys.stderr', new=StringIO()):
                 resolved = resolve_workers_dir(None)
               self.assertEqual(os.path.abspath(resolved), os.path.abspath(self.workers_path))
-              output = fake_out.getvalue()
-              self.assertIn('Saved', output)
-              self.assertIn('CRAZY_WORKERS_DIR', output)
-
-              # Verify .env was written
+              self.assertIn('Saved', fake_out.getvalue())
+              self.assertIn('CRAZY_WORKERS_DIR', fake_out.getvalue())
               with open(self.env_file, 'r') as f:
                 self.assertIn(f'CRAZY_WORKERS_DIR={os.path.abspath(self.workers_path)}', f.read())
 
@@ -90,10 +83,81 @@ class TestCliEnv(BaseTestCase):
               self.assertEqual(cm.exception.code, 1)
               self.assertIn('is not a valid directory', fake_err.getvalue())
 
-  def test_main_no_command(self):
-    argv = ['crazy-workers']
-    with patch('sys.argv', argv):
-      with patch('sys.stdout', new=StringIO()):
-        with self.assertRaises(SystemExit) as cm:
-          cli_main()
-        self.assertEqual(cm.exception.code, 1)
+  def test_autodetect_fallback_workers_dir(self):
+    original_isdir = os.path.isdir
+    original_abspath = os.path.abspath
+
+    def mocked_isdir(p):
+      if p == 'workers':
+        return True
+      return original_isdir(p)
+
+    def mocked_abspath(p):
+      if p == 'workers':
+        return self.workers_path
+      return original_abspath(p)
+
+    from crazy_workers.database.storage import Storage
+
+    db_path = os.path.join(self.workers_path, '.service', 'workers.db')
+    Storage(db_path).dispose()
+
+    with patch('crazy_workers.cli.discovery.os.path.isdir', side_effect=mocked_isdir):
+      with patch('crazy_workers.cli.discovery.os.path.abspath', side_effect=mocked_abspath):
+        with patch('sys.argv', ['crazy-workers', 'list']):
+          with patch('sys.stdin.isatty', return_value=False):
+            with patch('sys.stdout', new=StringIO()) as fake_out:
+              cli_main()
+              output = fake_out.getvalue()
+              self.assertTrue('Active & Registered' in output or 'No workers' in output)
+
+  def test_env_file_discovery(self):
+    env_path = os.path.abspath('.env_test')
+    with open(env_path, 'w') as f:
+      f.write(f'CRAZY_WORKERS_DIR={self.workers_path}\n')
+
+    from crazy_workers.database.storage import Storage
+
+    db_path = os.path.join(self.workers_path, '.service', 'workers.db')
+    Storage(db_path).dispose()
+
+    try:
+
+      def mock_load_env():
+        if os.path.exists(env_path):
+          with open(env_path, 'r') as f:
+            for line in f:
+              if '=' in line:
+                k, v = line.strip().split('=', 1)
+                os.environ[k] = v
+
+      with patch('crazy_workers.cli.discovery.load_env', side_effect=mock_load_env):
+        with patch('sys.argv', ['crazy-workers', 'list']):
+          with patch('sys.stdout', new=StringIO()) as fake_out:
+            cli_main()
+            output = fake_out.getvalue()
+            self.assertTrue('Active & Registered' in output or 'No workers' in output)
+    finally:
+      if os.path.exists(env_path):
+        os.remove(env_path)
+
+  def test_save_to_env_last_line_no_newline(self):
+    with open(self.env_file, 'w') as f:
+      f.write('OTHER=value')  # no trailing newline
+
+    save_to_env('NEW_KEY', 'new_value')
+
+    with open(self.env_file, 'r') as f:
+      content = f.read()
+    self.assertIn('OTHER=value\n', content)
+    self.assertIn('NEW_KEY=new_value\n', content)
+
+  def test_resolve_workers_dir_not_found(self):
+    with patch.dict(os.environ, {}, clear=True):
+      with patch('sys.stdin.isatty', return_value=False):
+        with patch('os.path.isdir', return_value=False):
+          with patch('sys.stderr', new=StringIO()) as fake_err:
+            with self.assertRaises(SystemExit) as cm:
+              resolve_workers_dir(None)
+            self.assertEqual(cm.exception.code, 1)
+            self.assertIn('Workers directory not found', fake_err.getvalue())

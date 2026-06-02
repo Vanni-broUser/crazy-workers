@@ -119,3 +119,22 @@ class TestManagerStarter(BaseTestCase):
       success2, msg2 = self.manager.start_worker('example_worker', worker_key='concurrent_key2')
       self.assertFalse(success2)
       self.assertEqual(msg2, 'Worker state conflict (concurrent start)')
+
+  def test_start_worker_with_env(self):
+    env = {'CRAZY_TEST_VAR': 'hello'}
+    success, result = self.manager.start_worker('example_worker', worker_key='env_test', env=env)
+    self.assertTrue(success)
+    self.assertEqual(result['status'], 'RUNNING')
+
+  def test_prepare_worker_record_integrity_error(self):
+    from sqlalchemy.exc import IntegrityError
+    from unittest.mock import MagicMock
+
+    from crazy_workers.core.manager.starter import _prepare_worker_record
+
+    mock_session = MagicMock()
+    mock_session.commit.side_effect = IntegrityError(None, None, Exception('UNIQUE'))
+
+    result = _prepare_worker_record(None, 'example_worker', 'ie_key', {}, mock_session)
+    self.assertIsNone(result)
+    mock_session.rollback.assert_called_once()

@@ -154,5 +154,7 @@ cython_debug/
 # Project specific
 .ruff_cache/
 .recovery.lock
+.env.tmp
 example_app/logs/*.log
 example_app/workers/.service/
+tests/test_env_*/

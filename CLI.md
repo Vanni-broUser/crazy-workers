@@ -1,112 +1,139 @@
 # Crazy Workers CLI
 
-The `crazy-workers` library provides a command-line interface to manage workers directly from the terminal.
+The `crazy-workers` library provides a command-line interface to manage worker processes directly from the terminal.
 
 ## Installation
 
-The CLI is installed automatically with the library:
-
 ```bash
-pip install .
+pip install crazy-workers
 ```
 
 ## Global Options
 
-- `--workers-dir`: Directory containing the worker scripts (`.py` files).
+| Option | Description |
+|--------|-------------|
+| `--workers-dir PATH` | Directory containing the worker scripts. Overrides all other discovery methods. |
 
 ## Worker Directory Discovery
 
-The CLI uses a tiered discovery mechanism to find your workers directory. The discovery order is:
+The CLI resolves the workers directory through a tiered mechanism (highest priority first):
 
-1.  **Command Line Flag**: High priority. If `--workers-dir` is provided, it must point to an existing directory.
-2.  **Environment Variable**: Checks for `CRAZY_WORKERS_DIR`. This can be set in your shell or in a local `.env` file.
-3.  **Interactive Prompt**: If the above fail and you are in an interactive terminal, the CLI will ask for the path. If provided, it will be validated and **automatically saved** to a `.env` file for future use.
-4.  **Auto-detection**: If no input is given in the prompt (or if not in a TTY), it checks for a folder named `workers/` in the current working directory.
+1. **`--workers-dir` flag** — must point to an existing directory, otherwise the CLI exits with an error.
+2. **`CRAZY_WORKERS_DIR` environment variable** — can be set in your shell or in a local `.env` file.
+3. **Interactive prompt** — if running in a TTY, asks for the path and saves it to `.env` for future use.
+4. **Auto-detection** — checks for a folder named `workers/` in the current working directory.
 
-If none of the above result in a valid existing directory, the CLI will error out. Unlike the library, the CLI **never** creates the workers directory automatically.
+If none of the above resolves to a valid directory, the CLI exits with an error. Unlike the library, the CLI **never creates** the workers directory.
 
 ## Commands
 
-### List Workers
+### `list`
 
-Shows a list of all workers stored in the database with their current status and PID.
+Shows all workers tracked in the database, including their status, PID, last action timestamp, and parameters.
 
 ```bash
 crazy-workers list
+crazy-workers --workers-dir /path/to/workers list
 ```
 
-### Start Worker
+Status colors: `green` = RUNNING, `cyan` = NEVER_STARTED, `yellow` = STARTING, `dim` = STOPPED, `bold red` = CRASHED.
 
-Starts a new worker process. If no `--key` is provided, the key defaults to the worker type. You can run multiple instances of the same worker type simultaneously by providing different keys.
+---
+
+### `start`
+
+Starts a worker process. If `worker_type` is omitted, presents an interactive list of available `.py` files.
 
 ```bash
-# Explicit type (key defaults to 'example_worker')
+# Start by type (key defaults to worker_type)
 crazy-workers start example_worker
 
-# Interactive selection (lists available .py files)
-crazy-workers start
-
-# With custom key (allows running another 'example_worker' even if one is already running)
-crazy-workers start example_worker --key my_worker_1
+# With a custom key (allows multiple instances of the same type)
+crazy-workers start example_worker --key job_1
 
 # With parameters (must be a valid JSON string)
-crazy-workers start example_worker --params '{"duration": 10, "mode": "fast"}'
+crazy-workers start example_worker --params '{"duration": 30, "mode": "fast"}'
+
+# Interactive selection
+crazy-workers start
 ```
 
-### Stop Worker
+| Option | Description |
+|--------|-------------|
+| `worker_type` | Filename of the worker script (without `.py`). Optional — interactive if omitted. |
+| `--key KEY` | Unique key for this instance. Defaults to `worker_type`. |
+| `--params JSON` | JSON string passed to the worker as `sys.argv[1]`. |
 
-Stops a running worker by its unique key.
+---
+
+### `stop`
+
+Stops a running worker by its key. If `worker_key` is omitted, presents an interactive list of running workers.
 
 ```bash
 # Explicit key
-crazy-workers stop my_custom_key
+crazy-workers stop job_1
 
-# Interactive selection (lists only running workers)
+# Interactive selection
 crazy-workers stop
 ```
 
-### Show Parameters
+On stop, unmanaged child processes are also terminated. Independently managed nested workers (started via their own `WorkerManager`) are preserved.
 
-Displays the parameters used when a worker was started. The output is formatted as JSON.
+---
+
+### `params`
+
+Displays the parameters a worker was started with, formatted as JSON.
 
 ```bash
 # Explicit key
-crazy-workers params my_custom_key
+crazy-workers params job_1
 
-# Interactive selection (lists all registered workers)
+# Interactive selection
 crazy-workers params
 ```
 
+---
+
+### `restore`
+
+Scans the database for workers whose status is `RUNNING` but whose process is dead, and restarts them. Uses a file lock to prevent concurrent recovery.
+
+```bash
+crazy-workers restore
+```
+
+Typically called on application startup. In code, the equivalent is `manager.recover_workers()`.
+
+---
+
 ## Interactive Mode
 
-If you omit the required arguments for `start` or `stop`, the CLI will automatically enter **Interactive Mode**, showing you a numbered list of available options. This works in any terminal without additional configuration.
+Omitting `worker_type` (for `start`) or `worker_key` (for `stop` and `params`) activates interactive mode — a numbered list is shown and you select with a number. Requires a TTY.
 
-## Configuration via .env
+## Configuration via `.env`
 
-When you provide a path during the interactive prompt, it is stored in a `.env` file in your current directory:
+When the interactive prompt is used to set the workers directory, it is automatically saved to `.env` in the current working directory:
 
 ```text
 CRAZY_WORKERS_DIR=/absolute/path/to/workers
 ```
 
-The CLI automatically loads variables from `.env` at startup.
+The CLI reads this file at every invocation. You can also set it manually.
 
-## Example Usage
-
-If you are using the example application and you are in the project root:
+### Platform examples
 
 ```bash
-crazy-workers list
-```
-
-If you are in a different directory:
-
-```bash
-# On Linux/macOS
-echo "CRAZY_WORKERS_DIR=$(pwd)/example_app/workers" > .env
+# Linux / macOS
+export CRAZY_WORKERS_DIR=/path/to/workers
 crazy-workers list
 
-# On Windows (PowerShell)
-"CRAZY_WORKERS_DIR=$((Get-Item .).FullName)\example_app\workers" | Out-File -Encoding utf8 .env
+# Windows (PowerShell)
+$env:CRAZY_WORKERS_DIR = "C:\path\to\workers"
+crazy-workers list
+
+# Persist to .env (any platform)
+echo "CRAZY_WORKERS_DIR=/path/to/workers" > .env
 crazy-workers list
 ```

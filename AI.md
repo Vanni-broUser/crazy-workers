@@ -1,22 +1,77 @@
 # AI Project Context & Rules
 
 ## Core Mandates
-- **Clean & Talking Code**: Prioritize expressive, self-documenting code ("codice parlante"). Variables, functions, and classes should have clear, descriptive names that reveal their intent.
+
+- **Clean & Talking Code**: Prioritize expressive, self-documenting code. Variables, functions, and classes should have clear, descriptive names that reveal their intent.
 - **Modularity & Decomposition**: Keep files small and focused on a single responsibility. If a file becomes too large or complex, refactor it into a module (a directory with `__init__.py` and sub-modules).
-- **Structured Testing**: Tests must be organized into a `tests/` directory that mirrors the package structure of the codebase. Each source module should have a corresponding test module.
-- **Responsibility Distribution**: Aim for a balanced distribution of responsibilities. Use design patterns (e.g., Command, Strategy, Factory) where appropriate to reduce complexity.
-- **Testing Integrity**: Never modify the codebase solely to facilitate a test (e.g., adding test-only parameters or changing production logs just for assertions). If a test is difficult to write or fails due to lack of visibility, refactor for better observability or improve the test setup itself.
+- **Structured Testing**: Tests must be organized into a `tests/` directory that mirrors the package structure. Each source module should have a corresponding test module. Cross-cutting integration tests go in `tests/integration/`. Tests for `example_app/` go in `tests/app/`.
+- **Responsibility Distribution**: Aim for a balanced distribution of responsibilities. Use design patterns where appropriate to reduce complexity.
+- **Testing Integrity**: Never modify the codebase solely to facilitate a test. If a test is difficult to write, refactor for better observability or improve the test setup.
 - **Linting & Formatting**: Always run `ruff check . --fix` and `ruff format .` after any code change.
-- **Testing**: Always run `python -m unittest discover tests` after changes.
-- **Coverage**: Ensure total coverage stays above 90%. New code must be covered by tests. Each individual file must maintain a minimum coverage of 75%.
+- **Testing**: Always run `pytest` after changes.
+- **Coverage**: Ensure total coverage stays above 95%. New code must be covered by tests. Each individual file must maintain a minimum coverage of 75%.
 - **Clean Tests**: Tests must be clean, readable, and strictly free of `print()` statements. Use assertions for verification.
-- **Documentation Maintenance**: After every development cycle or feature implementation, proactively review and update relevant documentation (e.g., `README.md`, `CLI.md`, or specific `.md` files). Ensure that all functional changes, new configurations, or architectural shifts are accurately reflected for the end user.
+- **No Silent Exceptions**: Avoid broad `except Exception: pass` blocks. Catch only specific, expected exception types. Each exception handler must either log the error, propagate it, or have an explicit comment explaining why silence is correct.
+- **Documentation Maintenance**: After every development cycle, review and update `README.md`, `CLI.md`, and this file. Ensure all functional changes, new configurations, and architectural shifts are accurately reflected.
 - **Style**: Follow `pyproject.toml` (2-space indent, single quotes). No `print` statements. Imports must be sorted alphabetically and organized into two blocks separated by a blank line:
-  1. External dependencies: Standard library and third-party packages (e.g., Flask, SQLAlchemy, psutil).
-  2. Project-internal imports: Modules belonging to the project itself.
+  1. External dependencies: standard library and third-party packages.
+  2. Project-internal imports: modules belonging to the project itself.
+
+## Test Structure
+
+```
+tests/
+  base.py                   # BaseTestCase with process leak detection
+  core/
+    test_engine.py          # crazy_workers/core/engine.py
+    test_recovery.py        # crazy_workers/core/recovery.py
+    manager/
+      test_init.py          # crazy_workers/core/manager/__init__.py
+      test_lister.py        # crazy_workers/core/manager/lister.py
+      test_recoverer.py     # crazy_workers/core/manager/recoverer.py
+      test_starter.py       # crazy_workers/core/manager/starter.py
+      test_stopper.py       # crazy_workers/core/manager/stopper.py
+  cli/
+    test_main.py            # crazy_workers/cli/main.py
+    test_discovery.py       # crazy_workers/cli/discovery.py
+    commands/
+      test_lister.py        # crazy_workers/cli/commands/lister.py
+      test_starter.py       # crazy_workers/cli/commands/starter.py
+      test_stopper.py       # crazy_workers/cli/commands/stopper.py
+      test_params.py        # crazy_workers/cli/commands/params.py
+      test_restore.py       # crazy_workers/cli/commands/restorer.py
+  database/
+    test_storage.py         # crazy_workers/database/storage.py
+  integration/              # Full-stack tests with real processes
+    test_resilience.py      # Kill/recovery/log/path-traversal scenarios
+    test_nested_workers.py  # Parent-child worker scenarios
+  app/                      # Tests for example_app/
+    test_app.py             # example_app/app.py (requires flask)
+    workers/
+      test_workers.py       # Smoke tests for each example worker
+```
 
 ## Commands
-- **Test**: `python -m unittest discover tests`
-- **Coverage**: `coverage run -m unittest discover tests && coverage report`
-- **Lint**: `ruff check .`
-- **Format**: `ruff format .`
+
+```bash
+# Lint
+ruff check .
+
+# Lint + auto-fix
+ruff check . --fix
+
+# Format
+ruff format .
+
+# Test
+pytest
+
+# Test with coverage
+coverage run -m pytest && coverage report
+
+# Build for PyPI
+python -m build
+
+# Check distribution
+twine check dist/*
+```

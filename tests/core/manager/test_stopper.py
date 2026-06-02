@@ -32,13 +32,11 @@ class TestManagerStopper(BaseTestCase):
       mock_proc.children.return_value = []
       mock_process_class.return_value = mock_proc
 
-      session = self.manager.storage.get_session()
-      worker = Worker(
-        worker_key='timeout_test', worker_type='example_worker', parameters={}, status=WorkerStatus.RUNNING, pid=12345
-      )
-      session.add(worker)
-      session.commit()
-      session.close()
+      with self.manager.storage.session_scope() as session:
+        worker = Worker(
+          worker_key='timeout_test', worker_type='example_worker', parameters={}, status=WorkerStatus.RUNNING, pid=12345
+        )
+        session.add(worker)
 
       with patch('crazy_workers.core.engine.is_process_running', return_value=True):
         success, msg = self.manager.stop_worker('timeout_test')
@@ -47,13 +45,11 @@ class TestManagerStopper(BaseTestCase):
 
   def test_library_stop_exception(self):
     with patch('crazy_workers.core.engine.psutil.Process', side_effect=Exception('Generic error')):
-      session = self.manager.storage.get_session()
-      worker = Worker(
-        worker_key='exc_test', worker_type='example_worker', parameters={}, status=WorkerStatus.RUNNING, pid=12345
-      )
-      session.add(worker)
-      session.commit()
-      session.close()
+      with self.manager.storage.session_scope() as session:
+        worker = Worker(
+          worker_key='exc_test', worker_type='example_worker', parameters={}, status=WorkerStatus.RUNNING, pid=12345
+        )
+        session.add(worker)
 
       with patch('crazy_workers.core.engine.is_process_running', return_value=True):
         success, msg = self.manager.stop_worker('exc_test')
@@ -117,3 +113,13 @@ class TestManagerStopper(BaseTestCase):
 
     # Cleanup child
     self.manager.stop_worker('child_0')
+
+  def test_stop_worker_no_storage(self):
+    orig = self.manager.storage
+    self.manager.storage = None
+    try:
+      success, msg = self.manager.stop_worker('any_key')
+      self.assertFalse(success)
+      self.assertEqual(msg, 'System not initialized (database missing)')
+    finally:
+      self.manager.storage = orig
