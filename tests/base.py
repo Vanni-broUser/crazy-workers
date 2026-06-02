@@ -59,7 +59,7 @@ class BaseTestCase(unittest.TestCase):
         try:
           p = psutil.Process(pid)
           cmd = ' '.join(p.cmdline())
-          if 'python' in cmd.lower() and ('example_worker' in cmd or 'workers' in cmd):
+          if 'python' in cmd.lower() and self.workers_path in cmd:
             real_leaks.append(f'PID {pid}: {cmd}')
         except (psutil.NoSuchProcess, psutil.AccessDenied):
           continue
