@@ -1,7 +1,6 @@
 import json
 import os
 import sys
-import time
 import unittest
 from unittest.mock import patch
 
@@ -54,10 +53,13 @@ class TestSimulatorWorkerSmoke(BaseTestCase):
   def setUp(self):
     super().setUp()
     import shutil
+
     shutil.copy(
       os.path.join(
         os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))),
-        'example_app', 'workers', 'simulator_worker.py',
+        'example_app',
+        'workers',
+        'simulator_worker.py',
       ),
       self.workers_path,
     )
@@ -65,5 +67,4 @@ class TestSimulatorWorkerSmoke(BaseTestCase):
   def test_runs_steps_and_stops(self):
     success, _ = self.manager.start_worker('simulator_worker', worker_key='smoke_simulator', parameters={'steps': 3})
     self.assertTrue(success)
-    time.sleep(0.5)
     self.manager.stop_worker('smoke_simulator')

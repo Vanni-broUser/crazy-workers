@@ -6,7 +6,6 @@ These tests are slower by design — they kill, recover, and inspect live worker
 import os
 import psutil
 import shutil
-import time
 
 from crazy_workers import WorkerManager
 from tests.base import BaseTestCase
@@ -54,13 +53,8 @@ class TestResilience(BaseTestCase):
     self.manager.start_worker(
       'batch_worker', worker_key=worker_key, parameters={'items': ['test_item_123'], 'delay': 0.1}
     )
-    time.sleep(1)
-
     log_path = os.path.join(self.workers_path, '.service', 'logs', f'{worker_key}.log')
-    self.assertTrue(os.path.exists(log_path), f'Log file missing at {log_path}')
-    with open(log_path, 'r') as f:
-      content = f.read()
-    self.assertIn('Processing: test_item_123', content)
+    self.wait_for_log(log_path, 'Processing: test_item_123')
 
   def test_path_traversal_attempts(self):
     forbidden = [
@@ -80,14 +74,9 @@ class TestResilience(BaseTestCase):
       'example_worker', worker_key='robust_test', parameters={'duration': 5, 'worker_key': 'robust_test'}
     )
     self.assertTrue(success)
-    time.sleep(1)
-
     log_path = os.path.join(self.workers_path, '.service', 'logs', 'robust_test.log')
-    self.assertTrue(os.path.exists(log_path))
-    with open(log_path, 'r') as f:
-      logs = f.read()
-    self.assertIn('Worker robust_test starting', logs)
-    self.assertIn('Will run for 5 seconds', logs)
+    self.wait_for_log(log_path, 'Worker robust_test starting')
+    self.wait_for_log(log_path, 'Will run for 5 seconds')
 
     proc = psutil.Process(result['pid'])
     self.assertTrue(proc.is_running())

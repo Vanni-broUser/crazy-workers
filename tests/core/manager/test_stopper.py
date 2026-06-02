@@ -1,7 +1,6 @@
 import os
 import psutil
 import shutil
-import time
 from unittest.mock import MagicMock, patch
 
 from crazy_workers import WorkerStatus
@@ -69,20 +68,13 @@ class TestManagerStopper(BaseTestCase):
     )
     self.assertTrue(success, f'Worker failed to start: {result}')
 
-    # Wait for child PID file to appear.
-    for _ in range(30):
-      if os.path.exists(pid_file):
-        break
-      time.sleep(0.5)
-    self.assertTrue(os.path.exists(pid_file), 'Child PID file never appeared')
+    self.wait_for_file(pid_file)
 
     child_pid = int(open(pid_file).read().strip())
     self.assertTrue(psutil.pid_exists(child_pid), 'Child should be alive before stop')
 
     self.manager.stop_worker('sub_test')
-    time.sleep(1)
-
-    self.assertFalse(psutil.pid_exists(child_pid), 'Raw subprocess child must be dead after stop_worker')
+    self.wait_for_pid_dead(child_pid)
 
   def test_stop_preserves_managed_nested_workers(self):
     """stop_worker() must NOT kill children that are registered crazy-workers."""
@@ -98,7 +90,7 @@ class TestManagerStopper(BaseTestCase):
       parameters={'child_type': 'infinite_worker', 'num_children': 1, 'workers_dir': self.workers_path},
     )
     self.assertTrue(success)
-    time.sleep(2)  # let parent spawn child
+    self.wait_for_worker_in_db(self.manager, 'child_0')
 
     workers = self.manager.list_workers()
     child = next((w for w in workers if w['worker_key'] == 'child_0'), None)
@@ -107,7 +99,6 @@ class TestManagerStopper(BaseTestCase):
     child_pid = child['pid']
 
     self.manager.stop_worker('parent_nested')
-    time.sleep(1)
 
     self.assertTrue(psutil.pid_exists(child_pid), 'Managed nested worker must survive parent stop')
 

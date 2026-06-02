@@ -2,11 +2,11 @@ import json
 import os
 import shutil
 import sys
-import time
 import unittest
 from unittest.mock import patch
 
 from tests.base import BaseTestCase
+
 
 _WORKERS_SRC = os.path.join(
   os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))),
@@ -71,8 +71,8 @@ class TestBatchWorkerSmoke(BaseTestCase):
       'batch_worker', worker_key='smoke_batch', parameters={'items': ['a', 'b'], 'delay': 0.1}
     )
     self.assertTrue(success)
-    time.sleep(1)
-    self.assertTrue(os.path.exists(self._log('smoke_batch')))
+    self.wait_for_log(self._log('smoke_batch'), 'Processing: a')
+    self.wait_for_log(self._log('smoke_batch'), 'Processing: b')
     with open(self._log('smoke_batch')) as f:
       content = f.read()
     self.assertIn('Processing: a', content)

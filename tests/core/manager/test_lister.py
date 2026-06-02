@@ -1,5 +1,4 @@
 import os
-import time
 
 from tests.base import BaseTestCase
 
@@ -25,7 +24,7 @@ class TestManagerLister(BaseTestCase):
     success, _ = self.manager.start_worker('short_lived', worker_key='sync_test')
     self.assertTrue(success)
 
-    time.sleep(1.0)
+    self.wait_for_worker_status(self.manager, 'sync_test', 'STOPPED')
     workers = self.manager.list_workers()
     worker = next(w for w in workers if w['worker_key'] == 'sync_test')
     self.assertEqual(worker['status'], 'STOPPED')

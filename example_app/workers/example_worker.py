@@ -14,12 +14,13 @@ def signal_handler(signum, frame):
   running = False
 
 
-# Register signal handlers for graceful shutdown
-signal.signal(signal.SIGTERM, signal_handler)
-signal.signal(signal.SIGINT, signal_handler)
-
-
 def main():
+  global running
+  running = True
+
+  signal.signal(signal.SIGTERM, signal_handler)
+  signal.signal(signal.SIGINT, signal_handler)
+
   if len(sys.argv) < 2:
     logging.error('Missing parameters')
     return

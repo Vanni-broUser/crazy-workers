@@ -2,7 +2,6 @@ import json
 import logging
 import os
 import sys
-import time
 import unittest
 from unittest.mock import patch
 
@@ -13,12 +12,11 @@ class TestExampleWorkerUnit(unittest.TestCase):
   def setUp(self):
     logging.disable(logging.CRITICAL)
     from example_app.workers import example_worker
+
     self.mod = example_worker
-    self.mod.running = True
 
   def tearDown(self):
     logging.disable(logging.NOTSET)
-    self.mod.running = True
 
   def test_missing_params_returns_early(self):
     with patch.object(sys, 'argv', ['example_worker.py']):
@@ -41,9 +39,15 @@ class TestExampleWorkerUnit(unittest.TestCase):
     self.assertIn('my_worker', logged)
 
   def test_stopped_by_signal_logs(self):
-    self.mod.running = False
+    def stop_on_sleep(*args):
+      self.mod.running = False
+
     argv = ['example_worker.py', json.dumps({'duration': 9999, 'worker_key': 'sig_w'})]
-    with patch.object(sys, 'argv', argv), patch('time.sleep'), patch('logging.info') as mock_log:
+    with (
+      patch.object(sys, 'argv', argv),
+      patch('time.sleep', side_effect=stop_on_sleep),
+      patch('logging.info') as mock_log,
+    ):
       self.mod.main()
     logged = ' '.join(str(c) for c in mock_log.call_args_list)
     self.assertIn('stopped by signal', logged)
@@ -58,8 +62,5 @@ class TestExampleWorkerSmoke(BaseTestCase):
       'example_worker', worker_key='smoke_example', parameters={'duration': 5, 'worker_key': 'smoke_example'}
     )
     self.assertTrue(success)
-    time.sleep(0.5)
-    self.assertTrue(os.path.exists(self._log('smoke_example')))
-    with open(self._log('smoke_example')) as f:
-      self.assertIn('smoke_example', f.read())
+    self.wait_for_log(self._log('smoke_example'), 'smoke_example')
     self.manager.stop_worker('smoke_example')

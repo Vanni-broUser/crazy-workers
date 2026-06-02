@@ -4,7 +4,6 @@ Storage, engine, starter, stopper, and recoverer working together.
 """
 
 import os
-import time
 
 from crazy_workers import WorkerManager, WorkerStatus
 from crazy_workers.database.schema import Worker
@@ -14,6 +13,7 @@ from tests.base import BaseTestCase
 class TestContextManager(BaseTestCase):
   def test_context_manager_calls_dispose_on_exit(self):
     from unittest.mock import patch
+
     with patch.object(self.manager, 'dispose', wraps=self.manager.dispose) as spy:
       with self.manager:
         success, _ = self.manager.start_worker('example_worker', worker_key='ctx_test')
@@ -23,6 +23,7 @@ class TestContextManager(BaseTestCase):
 
   def test_context_manager_calls_dispose_on_exception(self):
     from unittest.mock import patch
+
     with patch.object(self.manager, 'dispose', wraps=self.manager.dispose) as spy:
       try:
         with self.manager:
@@ -46,13 +47,15 @@ class TestDeadPidHandling(BaseTestCase):
     """A RUNNING record with a dead PID should be marked CRASHED and restarted."""
     with self.manager.storage.session_scope() as session:
       session.query(Worker).delete()
-      session.add(Worker(
-        worker_key='ghost',
-        worker_type='example_worker',
-        parameters={'duration': 10},
-        status=WorkerStatus.RUNNING,
-        pid=999999,  # dead PID
-      ))
+      session.add(
+        Worker(
+          worker_key='ghost',
+          worker_type='example_worker',
+          parameters={'duration': 10},
+          status=WorkerStatus.RUNNING,
+          pid=999999,  # dead PID
+        )
+      )
 
     success, result = self.manager.start_worker('example_worker', worker_key='ghost', parameters={'duration': 10})
     self.assertTrue(success, f'Expected restart, got: {result}')
@@ -70,8 +73,9 @@ class TestDeadPidHandling(BaseTestCase):
 
     pid = self.manager.list_workers()[0]['pid']
     import psutil
+
     psutil.Process(pid).kill()
-    time.sleep(0.3)
+    self.wait_for_pid_dead(pid)
 
     success2, result2 = self.manager.start_worker('example_worker', worker_key='dead_test', parameters={'duration': 5})
     self.assertTrue(success2, f'Second start should succeed: {result2}')
@@ -81,7 +85,9 @@ class TestDeadPidHandling(BaseTestCase):
 class TestDbPersistenceAcrossInstances(BaseTestCase):
   def test_worker_visible_to_new_manager_instance(self):
     """Workers started by manager A must be visible and stoppable by manager B."""
-    success, result = self.manager.start_worker('example_worker', worker_key='persist_test', parameters={'duration': 30})
+    success, result = self.manager.start_worker(
+      'example_worker', worker_key='persist_test', parameters={'duration': 30}
+    )
     self.assertTrue(success)
     pid = result['pid']
 
@@ -122,24 +128,21 @@ class TestLogAccumulationAcrossRestarts(BaseTestCase):
     self.manager.start_worker(
       'example_worker', worker_key='log_accum', parameters={'duration': 5, 'worker_key': 'log_accum'}
     )
-    time.sleep(0.5)
+    self.wait_for_log(log_path, 'log_accum')
     self.manager.stop_worker('log_accum')
 
-    with open(log_path) as f:
-      content_after_first_run = f.read()
-    self.assertIn('log_accum', content_after_first_run)
+    size_after_first_run = os.path.getsize(log_path)
+    self.assertGreater(size_after_first_run, 0)
 
     self.manager.start_worker(
       'example_worker', worker_key='log_accum', parameters={'duration': 5, 'worker_key': 'log_accum'}
     )
-    time.sleep(0.5)
+    # Wait for second run to append new content beyond what the first run left
+    self.wait_for(
+      lambda: os.path.getsize(log_path) > size_after_first_run,
+      msg='Log file did not grow after second run',
+    )
     self.manager.stop_worker('log_accum')
-
-    with open(log_path) as f:
-      final_content = f.read()
-
-    # Both runs must be present: the file was opened in append mode
-    self.assertGreater(len(final_content), len(content_after_first_run))
 
 
 class TestActiveProcessesConsistency(BaseTestCase):
@@ -167,13 +170,15 @@ class TestActiveProcessesConsistency(BaseTestCase):
     """Workers recovered via recover_workers() are spawned fresh — _active_processes should track them."""
     with self.manager.storage.session_scope() as session:
       session.query(Worker).delete()
-      session.add(Worker(
-        worker_key='recovered_ap',
-        worker_type='example_worker',
-        parameters={'duration': 30},
-        status=WorkerStatus.RUNNING,
-        pid=999999,
-      ))
+      session.add(
+        Worker(
+          worker_key='recovered_ap',
+          worker_type='example_worker',
+          parameters={'duration': 30},
+          status=WorkerStatus.RUNNING,
+          pid=999999,
+        )
+      )
 
     self.manager.recover_workers()
     # After recovery the worker is restarted via start_worker, so it enters _active_processes

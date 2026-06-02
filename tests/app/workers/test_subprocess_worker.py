@@ -1,21 +1,23 @@
 import json
 import os
 import sys
-import time
 import unittest
 from unittest.mock import MagicMock, mock_open, patch
 
 from tests.base import BaseTestCase
 
+
 _WORKERS_SRC = os.path.join(
   os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))),
-  'example_app', 'workers',
+  'example_app',
+  'workers',
 )
 
 
 class TestSubprocessWorkerUnit(unittest.TestCase):
   def setUp(self):
     from example_app.workers import subprocess_worker
+
     self.mod = subprocess_worker
 
   def _make_child(self, pid=1234):
@@ -85,6 +87,7 @@ class TestSubprocessWorkerSmoke(BaseTestCase):
   def setUp(self):
     super().setUp()
     import shutil
+
     shutil.copy(os.path.join(_WORKERS_SRC, 'subprocess_worker.py'), self.workers_path)
 
   def test_starts_child_and_writes_pid(self):
@@ -93,9 +96,5 @@ class TestSubprocessWorkerSmoke(BaseTestCase):
       'subprocess_worker', worker_key='smoke_subprocess', parameters={'pid_file': pid_file}
     )
     self.assertTrue(success)
-    for _ in range(20):
-      if os.path.exists(pid_file):
-        break
-      time.sleep(0.3)
-    self.assertTrue(os.path.exists(pid_file), 'subprocess_worker did not write pid_file')
+    self.wait_for_file(pid_file)
     self.manager.stop_worker('smoke_subprocess')

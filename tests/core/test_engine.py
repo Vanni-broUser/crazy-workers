@@ -1,7 +1,6 @@
 import psutil
 import subprocess
 import sys
-import time
 from unittest.mock import MagicMock, patch
 
 from crazy_workers.core.engine import get_running_process, is_process_running, terminate_process
@@ -46,8 +45,7 @@ class TestEngine(BaseTestCase):
     result = terminate_process(pid, popen_process=proc)
     self.assertTrue(result)
 
-    time.sleep(0.2)
-    self.assertFalse(is_process_running(pid))
+    self.wait_for_pid_dead(pid)
 
   def test_terminate_process_kills_on_timeout(self):
     mock_proc = MagicMock(spec=psutil.Process)

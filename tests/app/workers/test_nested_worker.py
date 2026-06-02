@@ -2,21 +2,23 @@ import os
 import psutil
 import shutil
 import sys
-import time
 import unittest
 from unittest.mock import MagicMock, patch
 
 from tests.base import BaseTestCase
 
+
 _WORKERS_SRC = os.path.join(
   os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))),
-  'example_app', 'workers',
+  'example_app',
+  'workers',
 )
 
 
 class TestNestedWorkerUnit(unittest.TestCase):
   def setUp(self):
     from example_app.workers import nested_worker
+
     self.mod = nested_worker
 
   def _make_manager(self, success=True):
@@ -27,9 +29,12 @@ class TestNestedWorkerUnit(unittest.TestCase):
   def test_spawns_children(self):
     mgr = self._make_manager(success=True)
     argv = ['nested_worker.py', '{"child_type": "fake", "num_children": 2, "workers_dir": "/tmp"}']
-    with patch.object(sys, 'argv', argv), patch('time.sleep'), \
-         patch('example_app.workers.nested_worker.WorkerManager', return_value=mgr), \
-         self.assertLogs(level='INFO') as log:
+    with (
+      patch.object(sys, 'argv', argv),
+      patch('time.sleep'),
+      patch('example_app.workers.nested_worker.WorkerManager', return_value=mgr),
+      self.assertLogs(level='INFO') as log,
+    ):
       self.mod.main()
     self.assertEqual(mgr.start_worker.call_count, 2)
     joined = '\n'.join(log.output)
@@ -39,25 +44,34 @@ class TestNestedWorkerUnit(unittest.TestCase):
   def test_failed_child_logged(self):
     mgr = self._make_manager(success=False)
     argv = ['nested_worker.py', '{"child_type": "fake", "num_children": 1, "workers_dir": "/tmp"}']
-    with patch.object(sys, 'argv', argv), patch('time.sleep'), \
-         patch('example_app.workers.nested_worker.WorkerManager', return_value=mgr), \
-         self.assertLogs(level='WARNING') as log:
+    with (
+      patch.object(sys, 'argv', argv),
+      patch('time.sleep'),
+      patch('example_app.workers.nested_worker.WorkerManager', return_value=mgr),
+      self.assertLogs(level='WARNING') as log,
+    ):
       self.mod.main()
     self.assertTrue(any('Failed' in line for line in log.output))
 
   def test_default_params(self):
     mgr = self._make_manager()
-    with patch.object(sys, 'argv', ['nested_worker.py']), patch('time.sleep'), \
-         patch('example_app.workers.nested_worker.WorkerManager', return_value=mgr), \
-         self.assertLogs(level='INFO'):
+    with (
+      patch.object(sys, 'argv', ['nested_worker.py']),
+      patch('time.sleep'),
+      patch('example_app.workers.nested_worker.WorkerManager', return_value=mgr),
+      self.assertLogs(level='INFO'),
+    ):
       self.mod.main()
     self.assertEqual(mgr.start_worker.call_count, 2)
 
   def test_dispose_called_on_exit(self):
     mgr = self._make_manager()
-    with patch.object(sys, 'argv', ['nested_worker.py']), patch('time.sleep'), \
-         patch('example_app.workers.nested_worker.WorkerManager', return_value=mgr), \
-         self.assertLogs(level='INFO'):
+    with (
+      patch.object(sys, 'argv', ['nested_worker.py']),
+      patch('time.sleep'),
+      patch('example_app.workers.nested_worker.WorkerManager', return_value=mgr),
+      self.assertLogs(level='INFO'),
+    ):
       self.mod.main()
     mgr.dispose.assert_called_once()
 
@@ -75,7 +89,7 @@ class TestNestedWorkerSmoke(BaseTestCase):
       parameters={'child_type': 'infinite_worker', 'num_children': 1, 'workers_dir': self.workers_path},
     )
     self.assertTrue(success)
-    time.sleep(2)
+    self.wait_for_worker_in_db(self.manager, 'child_0')
     workers = self.manager.list_workers()
     self.assertTrue(any(w['worker_key'] == 'child_0' for w in workers))
     self.manager.stop_worker('smoke_nested')
@@ -95,7 +109,8 @@ class TestNestedWorkerIntegration(BaseTestCase):
       parameters={'child_type': 'infinite_worker', 'num_children': 2, 'workers_dir': self.workers_path},
     )
     self.assertTrue(success, f'Parent failed to start: {result}')
-    time.sleep(2)
+    self.wait_for_worker_in_db(self.manager, 'child_0')
+    self.wait_for_worker_in_db(self.manager, 'child_1')
 
     workers = self.manager.list_workers()
     keys = [w['worker_key'] for w in workers]
@@ -118,7 +133,7 @@ class TestNestedWorkerIntegration(BaseTestCase):
       worker_key='parent_survive',
       parameters={'child_type': 'infinite_worker', 'num_children': 1, 'workers_dir': self.workers_path},
     )
-    time.sleep(2)
+    self.wait_for_worker_in_db(self.manager, 'child_0')
 
     workers = self.manager.list_workers()
     child = next((w for w in workers if w['worker_key'] == 'child_0'), None)
@@ -126,7 +141,6 @@ class TestNestedWorkerIntegration(BaseTestCase):
     child_pid = child['pid']
 
     self.manager.stop_worker('parent_survive')
-    time.sleep(1)
 
     self.assertTrue(psutil.pid_exists(child_pid), 'Child must survive parent termination')
     workers = self.manager.list_workers()

@@ -42,7 +42,7 @@ class TestCliCommandLister(BaseTestCase):
             if 'list_test' in args:
               found = True
               last_action_col = args[-2]  # second-to-last: Last Action
-              params_col = args[-1]       # last: Params
+              params_col = args[-1]  # last: Params
               self.assertIn('Started', last_action_col)
               self.assertTrue(params_col.endswith('...'))
               break
