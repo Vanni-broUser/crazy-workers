@@ -4,7 +4,6 @@ import shutil
 import sys
 import time
 import unittest
-from io import StringIO
 from unittest.mock import patch
 
 from tests.base import BaseTestCase
@@ -17,36 +16,46 @@ _WORKERS_SRC = os.path.join(
 
 
 class TestBatchWorkerUnit(unittest.TestCase):
-  def _run(self, params=None):
+  def _run(self, params=None, expect_exit=False):
     argv = ['batch_worker.py', json.dumps(params)] if params is not None else ['batch_worker.py']
-    with patch.object(sys, 'argv', argv), patch('time.sleep'), patch('sys.stdout', new_callable=StringIO) as out:
-      from example_app.workers import batch_worker
+    from example_app.workers import batch_worker
 
-      batch_worker.main()
-      return out.getvalue()
+    if expect_exit:
+      with patch.object(sys, 'argv', argv), patch('time.sleep'), self.assertLogs(level='INFO') as log:
+        with self.assertRaises(SystemExit) as ctx:
+          batch_worker.main()
+      return log.output, ctx.exception.code
+    else:
+      with patch.object(sys, 'argv', argv), patch('time.sleep'), self.assertLogs(level='INFO') as log:
+        batch_worker.main()
+      return log.output, 0
 
   def test_default_params(self):
-    output = self._run()
-    self.assertIn('task1', output)
-    self.assertIn('task2', output)
-    self.assertIn('task3', output)
-    self.assertIn('completed', output)
+    output, _ = self._run()
+    joined = '\n'.join(output)
+    self.assertIn('task1', joined)
+    self.assertIn('task2', joined)
+    self.assertIn('task3', joined)
+    self.assertIn('completed', joined)
 
   def test_custom_items(self):
-    output = self._run({'items': ['x', 'y'], 'delay': 0})
-    self.assertIn('Processing: x', output)
-    self.assertIn('Processing: y', output)
-    self.assertIn('2/2', output)
+    output, _ = self._run({'items': ['x', 'y'], 'delay': 0})
+    joined = '\n'.join(output)
+    self.assertIn('Processing: x', joined)
+    self.assertIn('Processing: y', joined)
+    self.assertIn('2/2', joined)
 
   def test_progress_format(self):
-    output = self._run({'items': ['a', 'b', 'c'], 'delay': 0})
-    self.assertIn('1/3', output)
-    self.assertIn('3/3', output)
+    output, _ = self._run({'items': ['a', 'b', 'c'], 'delay': 0})
+    joined = '\n'.join(output)
+    self.assertIn('1/3', joined)
+    self.assertIn('3/3', joined)
 
   def test_empty_items(self):
-    output = self._run({'items': [], 'delay': 0})
-    self.assertIn('0 items', output)
-    self.assertIn('completed', output)
+    output, _ = self._run({'items': [], 'delay': 0})
+    joined = '\n'.join(output)
+    self.assertIn('0 items', joined)
+    self.assertIn('completed', joined)
 
 
 class TestBatchWorkerSmoke(BaseTestCase):

@@ -1,32 +1,24 @@
 import json
+import logging
 import sys
 import time
 
 
 def main():
-  if len(sys.argv) > 1:
-    params = json.loads(sys.argv[1])
-  else:
-    params = {}
-
+  params = json.loads(sys.argv[1]) if len(sys.argv) > 1 else {}
   interval = params.get('interval', 5)
   message = params.get('message', 'Infinite worker pulsing...')
 
-  # Use sys.stdout.write to bypass ruff T201 if needed, or just use print and ignore lint for examples
-  sys.stdout.write(f'Starting infinite worker with interval {interval}s\n')
-  sys.stdout.flush()
+  logging.info(f'Starting infinite worker with interval {interval}s')
 
   try:
     while True:
-      sys.stdout.write(f'[{time.strftime("%H:%M:%S")}] {message}\n')
-      sys.stdout.flush()
+      logging.info(f'[{time.strftime("%H:%M:%S")}] {message}')
       time.sleep(interval)
   except KeyboardInterrupt:
-    sys.stdout.write('Infinite worker received interrupt, exiting...\n')
-    sys.stdout.flush()
+    logging.info('Infinite worker received interrupt, exiting...')
   except Exception as e:
-    sys.stderr.write(f'Infinite worker error: {e}\n')
-    sys.stderr.flush()
+    logging.error(f'Infinite worker error: {e}')
     sys.exit(1)
 
 

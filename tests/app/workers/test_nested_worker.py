@@ -4,7 +4,6 @@ import shutil
 import sys
 import time
 import unittest
-from io import StringIO
 from unittest.mock import MagicMock, patch
 
 from tests.base import BaseTestCase
@@ -28,49 +27,37 @@ class TestNestedWorkerUnit(unittest.TestCase):
   def test_spawns_children(self):
     mgr = self._make_manager(success=True)
     argv = ['nested_worker.py', '{"child_type": "fake", "num_children": 2, "workers_dir": "/tmp"}']
-    with (
-      patch.object(sys, 'argv', argv),
-      patch('time.sleep'),
-      patch('sys.stdout', new_callable=StringIO) as out,
-      patch('example_app.workers.nested_worker.WorkerManager', return_value=mgr),
-    ):
+    with patch.object(sys, 'argv', argv), patch('time.sleep'), \
+         patch('example_app.workers.nested_worker.WorkerManager', return_value=mgr), \
+         self.assertLogs(level='INFO') as log:
       self.mod.main()
     self.assertEqual(mgr.start_worker.call_count, 2)
-    output = out.getvalue()
-    self.assertIn('child_0', output)
-    self.assertIn('child_1', output)
+    joined = '\n'.join(log.output)
+    self.assertIn('child_0', joined)
+    self.assertIn('child_1', joined)
 
   def test_failed_child_logged(self):
     mgr = self._make_manager(success=False)
     argv = ['nested_worker.py', '{"child_type": "fake", "num_children": 1, "workers_dir": "/tmp"}']
-    with (
-      patch.object(sys, 'argv', argv),
-      patch('time.sleep'),
-      patch('sys.stdout', new_callable=StringIO) as out,
-      patch('example_app.workers.nested_worker.WorkerManager', return_value=mgr),
-    ):
+    with patch.object(sys, 'argv', argv), patch('time.sleep'), \
+         patch('example_app.workers.nested_worker.WorkerManager', return_value=mgr), \
+         self.assertLogs(level='WARNING') as log:
       self.mod.main()
-    self.assertIn('Failed', out.getvalue())
+    self.assertTrue(any('Failed' in line for line in log.output))
 
   def test_default_params(self):
     mgr = self._make_manager()
-    with (
-      patch.object(sys, 'argv', ['nested_worker.py']),
-      patch('time.sleep'),
-      patch('sys.stdout', new_callable=StringIO),
-      patch('example_app.workers.nested_worker.WorkerManager', return_value=mgr),
-    ):
+    with patch.object(sys, 'argv', ['nested_worker.py']), patch('time.sleep'), \
+         patch('example_app.workers.nested_worker.WorkerManager', return_value=mgr), \
+         self.assertLogs(level='INFO'):
       self.mod.main()
     self.assertEqual(mgr.start_worker.call_count, 2)
 
   def test_dispose_called_on_exit(self):
     mgr = self._make_manager()
-    with (
-      patch.object(sys, 'argv', ['nested_worker.py']),
-      patch('time.sleep'),
-      patch('sys.stdout', new_callable=StringIO),
-      patch('example_app.workers.nested_worker.WorkerManager', return_value=mgr),
-    ):
+    with patch.object(sys, 'argv', ['nested_worker.py']), patch('time.sleep'), \
+         patch('example_app.workers.nested_worker.WorkerManager', return_value=mgr), \
+         self.assertLogs(level='INFO'):
       self.mod.main()
     mgr.dispose.assert_called_once()
 

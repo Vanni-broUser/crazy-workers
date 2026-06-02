@@ -104,7 +104,7 @@ def _spawn_worker_process(manager, worker, worker_path, parameters, env, session
   stderr_dest = log_fh if log_fh else subprocess.DEVNULL
 
   process = subprocess.Popen(
-    [sys.executable, worker_path, json.dumps(parameters)],
+    [sys.executable, '-u', '-m', 'crazy_workers._bootstrap', worker_path, json.dumps(parameters)],
     stdout=stdout_dest,
     stderr=stderr_dest,
     text=True,
