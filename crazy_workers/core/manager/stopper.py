@@ -22,8 +22,21 @@ def stop_worker(manager, worker_key):
     logger.info(f'Stopping worker {worker_key} (PID {worker.pid})')
     process = manager._active_processes.get(worker_key)
 
+    # PIDs of other managed workers — their processes must not be killed even
+    # if they happen to be child processes of the worker being stopped.
+    managed_pids = {
+      w.pid
+      for w in session.query(Worker)
+      .filter(
+        Worker.status == WorkerStatus.RUNNING,
+        Worker.worker_key != worker_key,
+        Worker.pid.isnot(None),
+      )
+      .all()
+    }
+
     try:
-      terminate_process(worker.pid, popen_process=process)
+      terminate_process(worker.pid, popen_process=process, exclude_pids=managed_pids)
 
       if worker_key in manager._active_processes:
         del manager._active_processes[worker_key]

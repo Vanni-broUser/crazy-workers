@@ -3,7 +3,6 @@ import logging
 import os
 import subprocess
 import sys
-import time
 from sqlalchemy import func
 from sqlalchemy.exc import IntegrityError
 
