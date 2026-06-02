@@ -67,7 +67,7 @@ class TestManagerStarter(BaseTestCase):
     success, msg = self.manager.start_worker('fail')
     self.assertFalse(success)
     self.assertEqual(msg, 'Worker process failed to start')
-    
+
     # Verify the mock was called correctly
     mock_popen.assert_called_once()
 
