@@ -92,46 +92,46 @@ def _spawn_worker_process(manager, worker, worker_path, parameters, env, session
     child_env.update(env)
 
   log_file_path = os.path.join(manager.logs_dir, f'{worker.worker_key}.log')
-  log_file = None
   try:
-    log_file = open(log_file_path, 'a')
-    stdout_dest = log_file
-    stderr_dest = log_file
+    log_fh = open(log_file_path, 'a')
     logger.info(f'Worker {worker.worker_key} logging to {log_file_path}')
   except Exception as e:
     logger.error(f'Failed to open log file for worker {worker.worker_key}: {e}')
-    stdout_dest = subprocess.DEVNULL
-    stderr_dest = subprocess.DEVNULL
+    log_fh = None
+
+  # log_fh ownership is transferred to Popen; do NOT close it here.
+  stdout_dest = log_fh if log_fh else subprocess.DEVNULL
+  stderr_dest = log_fh if log_fh else subprocess.DEVNULL
+
+  process = subprocess.Popen(
+    [sys.executable, worker_path, json.dumps(parameters)],
+    stdout=stdout_dest,
+    stderr=stderr_dest,
+    text=True,
+    env=child_env,
+  )
+
+  # Close our copy of the handle — Popen duplicated it via os.dup2 internally.
+  if log_fh:
+    log_fh.close()
 
   try:
-    process = subprocess.Popen(
-      [sys.executable, worker_path, json.dumps(parameters)],
-      stdout=stdout_dest,
-      stderr=stderr_dest,
-      text=True,
-      env=child_env,
-    )
-
-    try:
-      process.wait(timeout=0.05)
-      # If we reach here, it means the process exited immediately
-      logger.error(f'Worker {worker.worker_key} failed to start immediately (exit code: {process.returncode})')
-      worker.status = WorkerStatus.CRASHED
-      worker.pid = None
-      session.commit()
-      return False, 'Worker process failed to start'
-    except subprocess.TimeoutExpired:
-      # This is the expected case: the process is still running after the timeout
-      pass
-
-    worker.pid = process.pid
-    worker.status = WorkerStatus.RUNNING
-    worker.last_started_at = func.now()
+    process.wait(timeout=0.05)
+    # If we reach here, it means the process exited immediately
+    logger.error(f'Worker {worker.worker_key} failed to start immediately (exit code: {process.returncode})')
+    worker.status = WorkerStatus.CRASHED
+    worker.pid = None
     session.commit()
+    return False, 'Worker process failed to start'
+  except subprocess.TimeoutExpired:
+    # This is the expected case: the process is still running after the timeout
+    pass
 
-    manager._active_processes[worker.worker_key] = process
-    logger.info(f'Worker {worker.worker_key} started with PID {worker.pid}')
-    return True, worker.to_dict()
-  finally:
-    if log_file:
-      log_file.close()
+  worker.pid = process.pid
+  worker.status = WorkerStatus.RUNNING
+  worker.last_started_at = func.now()
+  session.commit()
+
+  manager._active_processes[worker.worker_key] = process
+  logger.info(f'Worker {worker.worker_key} started with PID {worker.pid}')
+  return True, worker.to_dict()

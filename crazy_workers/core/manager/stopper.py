@@ -12,6 +12,8 @@ def stop_worker(manager, worker_key):
   if not manager.storage:
     return False, 'System not initialized (database missing)'
 
+  # Collect everything we need from the DB, then release the session before
+  # calling terminate_process (which can block for up to `timeout` seconds).
   with manager.storage.session_scope() as session:
     worker = session.query(Worker).filter_by(worker_key=worker_key).first()
     if not worker:
@@ -19,9 +21,7 @@ def stop_worker(manager, worker_key):
     if worker.status != WorkerStatus.RUNNING:
       return False, 'Worker is not running'
 
-    logger.info(f'Stopping worker {worker_key} (PID {worker.pid})')
-    process = manager._active_processes.get(worker_key)
-
+    pid = worker.pid
     # PIDs of other managed workers — their processes must not be killed even
     # if they happen to be child processes of the worker being stopped.
     managed_pids = {
@@ -35,17 +35,24 @@ def stop_worker(manager, worker_key):
       .all()
     }
 
-    try:
-      terminate_process(worker.pid, popen_process=process, exclude_pids=managed_pids)
+  logger.info(f'Stopping worker {worker_key} (PID {pid})')
+  process = manager._active_processes.get(worker_key)
 
-      if worker_key in manager._active_processes:
-        del manager._active_processes[worker_key]
+  try:
+    terminate_process(pid, popen_process=process, exclude_pids=managed_pids)
+  except Exception as e:
+    logger.error(f'Error stopping worker {worker_key}: {e}')
+    return False, str(e)
 
+  if worker_key in manager._active_processes:
+    del manager._active_processes[worker_key]
+
+  with manager.storage.session_scope() as session:
+    worker = session.query(Worker).filter_by(worker_key=worker_key).first()
+    if worker:
       worker.status = WorkerStatus.STOPPED
       worker.pid = None
       worker.last_stopped_at = func.now()
-      logger.info(f'Worker {worker_key} stopped.')
-      return True, 'Worker stopped'
-    except Exception as e:
-      logger.error(f'Error stopping worker {worker_key}: {e}')
-      return False, str(e)
+
+  logger.info(f'Worker {worker_key} stopped.')
+  return True, 'Worker stopped'

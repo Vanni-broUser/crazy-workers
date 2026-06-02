@@ -108,3 +108,14 @@ class TestManagerStarter(BaseTestCase):
       success, result = self.manager.start_worker('example_worker', worker_key='log_err_test')
       self.assertTrue(success)
       self.assertEqual(result['status'], 'RUNNING')
+
+  def test_concurrent_start_same_key(self):
+    # _prepare_worker_record returns None when it catches an IntegrityError internally.
+    # Verify that start_worker surfaces the correct error message in that case.
+    success1, _ = self.manager.start_worker('example_worker', worker_key='concurrent_key')
+    self.assertTrue(success1)
+
+    with patch('crazy_workers.core.manager.starter._prepare_worker_record', return_value=None):
+      success2, msg2 = self.manager.start_worker('example_worker', worker_key='concurrent_key2')
+      self.assertFalse(success2)
+      self.assertEqual(msg2, 'Worker state conflict (concurrent start)')

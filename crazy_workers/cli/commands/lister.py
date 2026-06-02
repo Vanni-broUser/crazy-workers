@@ -1,14 +1,14 @@
 import json
 from datetime import datetime
-from rich.console import Console
 from rich.table import Table
+
+from ..ui import console
 
 
 def list_workers(manager):
-  console = Console()
   workers = manager.list_workers()
   if not workers:
-    console.print('[yellow]No workers found in database.[/yellow]')
+    console().print('[yellow]No workers found in database.[/yellow]')
     return []
   else:
     table = Table(
@@ -53,5 +53,5 @@ def list_workers(manager):
         last_action,
         params_str,
       )
-    console.print(table)
+    console().print(table)
     return workers

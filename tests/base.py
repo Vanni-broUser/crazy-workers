@@ -32,14 +32,11 @@ class BaseTestCase(unittest.TestCase):
     self.manager = WorkerManager(self.workers_path)
 
   def tearDown(self):
-    # Stop all workers
-    try:
-      workers = self.manager.list_workers()
-      for w in workers:
-        if w['status'] == 'RUNNING':
-          self.manager.stop_worker(w['worker_key'])
-    except Exception:
-      pass
+    # Stop all workers — let exceptions surface so leaked workers don't mask test failures
+    workers = self.manager.list_workers()
+    for w in workers:
+      if w['status'] == 'RUNNING':
+        self.manager.stop_worker(w['worker_key'])
 
     self.manager.dispose()
 

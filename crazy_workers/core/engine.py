@@ -1,5 +1,9 @@
+import logging
 import psutil
 import subprocess
+
+
+logger = logging.getLogger('crazy_workers')
 
 
 def get_running_process(pid):
@@ -19,7 +23,7 @@ def is_process_running(pid):
   """Checks if a process is truly running. Very resilient."""
   try:
     return get_running_process(pid) is not None
-  except Exception:
+  except (psutil.Error, OSError):
     return False
 
 
@@ -81,5 +85,6 @@ def terminate_process(pid, timeout=5, popen_process=None, exclude_pids=None):
           pass
 
     return True
-  except Exception:
+  except Exception as e:
+    logger.error(f'Unexpected error terminating process {pid}: {e}')
     raise

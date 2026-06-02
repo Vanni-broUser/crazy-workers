@@ -30,5 +30,5 @@ class TestManagerRobustness(BaseTestCase):
   def test_library_is_process_running_exception(self):
     from unittest.mock import patch
 
-    with patch('crazy_workers.core.engine.psutil.Process', side_effect=Exception('fail')):
+    with patch('crazy_workers.core.engine.psutil.Process', side_effect=psutil.AccessDenied(pid=123)):
       self.assertFalse(self.manager._is_process_running(123))

@@ -132,3 +132,12 @@ class TestCliParams(BaseTestCase):
           self.assertTrue(found)
 
     self.manager.stop_worker('list_test')
+
+  def test_cli_start_invalid_json_params(self):
+    args = ['crazy-workers', 'start', 'example_worker', '--params', 'not-valid-json{']
+    with patch('sys.argv', args):
+      with patch('sys.stderr', new=StringIO()) as fake_err:
+        with self.assertRaises(SystemExit) as cm:
+          cli_main()
+        self.assertEqual(cm.exception.code, 1)
+        self.assertIn('Invalid JSON', fake_err.getvalue())

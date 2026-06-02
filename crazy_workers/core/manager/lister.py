@@ -1,7 +1,7 @@
 import logging
 import os
 
-from ...database.schema import WorkerStatus
+from ...database.schema import Worker, WorkerStatus
 
 
 logger = logging.getLogger('crazy_workers')
@@ -31,8 +31,6 @@ def list_workers(manager):
     ]
 
   with manager.storage.session_scope() as session:
-    from ...database.schema import Worker
-
     # 2. Get registered workers from DB
     db_workers = session.query(Worker).all()
     results = []

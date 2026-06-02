@@ -1,16 +1,14 @@
 import argparse
 import sys
-from rich.console import Console
 from rich.panel import Panel
 
 from ..core.manager import WorkerManager
 from .commands import list_workers, restore_workers, show_params, start_worker, stop_worker
 from .discovery import resolve_workers_dir
+from .ui import console, err_console
 
 
 def main():
-  console = Console()
-  err_console = Console(stderr=True)
 
   def formatter(prog):
     return argparse.HelpFormatter(prog, max_help_position=32)
@@ -43,7 +41,7 @@ def main():
   args = parser.parse_args()
 
   if not args.command:
-    console.print(
+    console().print(
       Panel.fit(
         '[bold cyan]Crazy Workers CLI[/bold cyan]\n[dim]Manage your background processes with ease[/dim]',
         border_style='cyan',
@@ -65,7 +63,7 @@ def main():
           try:
             params = json.loads(args.params)
           except json.JSONDecodeError:
-            err_console.print('[bold red]Error:[/bold red] Invalid JSON in --params')
+            err_console().print('[bold red]Error:[/bold red] Invalid JSON in --params')
             sys.exit(1)
 
         if not start_worker(manager, args.worker_type, worker_key=args.key, parameters=params):
@@ -79,7 +77,7 @@ def main():
       elif args.command == 'restore':
         restore_workers(manager)
   except ValueError as e:
-    err_console.print(f'[bold red]Error:[/bold red] {e}')
+    err_console().print(f'[bold red]Error:[/bold red] {e}')
     sys.exit(1)
 
 

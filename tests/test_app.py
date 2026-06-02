@@ -1,7 +1,11 @@
+import pytest
 from unittest.mock import patch
 
-from example_app.app import create_app
-from tests.base import BaseTestCase
+
+flask = pytest.importorskip('flask')
+
+from example_app.app import create_app  # noqa: E402
+from tests.base import BaseTestCase  # noqa: E402
 
 
 class TestExampleApp(BaseTestCase):
