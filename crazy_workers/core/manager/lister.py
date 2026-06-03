@@ -11,7 +11,7 @@ def list_workers(manager):
   """Logic for listing workers, discovered and registered."""
   # 1. Get all .py files from workers_dir
   try:
-    available_types = {f[:-3] for f in os.listdir(manager.workers_dir) if f.endswith('.py')}
+    available_types = {f[:-3] for f in os.listdir(manager.workers_dir) if f.endswith('.py') and f != '__init__.py'}
   except Exception:
     available_types = set()
 

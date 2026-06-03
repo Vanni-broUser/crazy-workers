@@ -40,6 +40,18 @@ class TestManagerLister(BaseTestCase):
     self.assertIsNone(worker['worker_key'])
     self.assertEqual(worker['status'], 'NEVER_STARTED')
 
+  def test_list_workers_excludes_init_file(self):
+    init_file = os.path.join(self.workers_path, '__init__.py')
+    with open(init_file, 'w') as f:
+      f.write('')
+
+    try:
+      workers = self.manager.list_workers()
+      worker_types = [w['worker_type'] for w in workers]
+      self.assertNotIn('__init__', worker_types)
+    finally:
+      os.remove(init_file)
+
   def test_list_workers_no_storage(self):
     orig_storage = self.manager.storage
     self.manager.storage = None
