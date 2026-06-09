@@ -11,7 +11,7 @@ A Python library for managing background worker processes with persistent state,
 - **Process Management** — Start, stop, and monitor background Python scripts as independent OS processes.
 - **Automatic Recovery** — Detects crashed workers and restarts them on application boot.
 - **Child Process Control** — On stop, terminates unmanaged subprocesses while preserving independently-managed nested workers.
-- **CLI Interface** — Manage workers from the terminal with interactive prompts and auto-discovery (see [CLI.md](CLI.md)).
+- **CLI Interface** — Manage workers from the terminal with interactive prompts and auto-discovery (see [CLI.md](https://github.com/Vanni-broUser/crazy-workers/blob/main/CLI.md)).
 - **Security** — Built-in protection against path traversal in worker type and key names.
 - **Observability** — Per-worker file logging; all service files (DB, lock, logs) live in a `.service/` folder inside your workers directory.
 - **Zombie Protection** — Distinguishes active processes from zombies using `psutil`.
@@ -84,7 +84,7 @@ crazy-workers stop job_1
 crazy-workers restore
 ```
 
-See [CLI.md](CLI.md) for full CLI documentation.
+See [CLI.md](https://github.com/Vanni-broUser/crazy-workers/blob/main/CLI.md) for full CLI documentation.
 
 ## API Reference
 
@@ -174,7 +174,7 @@ def create_app():
     return app
 ```
 
-See `example_app/app.py` for a complete example.
+See [`example_app/app.py`](https://github.com/Vanni-broUser/crazy-workers/blob/main/example_app/app.py) for a complete example.
 
 ## Gunicorn / Multi-Process Servers
 
@@ -208,5 +208,4 @@ coverage run -m pytest && coverage report
 
 ### Standards
 
-See [AI.md](AI.md) for the full coding and testing standards used in this project.
-
+See [AI.md](https://github.com/Vanni-broUser/crazy-workers/blob/main/AI.md) for the full coding and testing standards used in this project.
