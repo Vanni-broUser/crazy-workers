@@ -70,12 +70,14 @@ class TestDeadPidHandling(BaseTestCase):
     """A second start_worker call for a dead worker should succeed, not return 'already running'."""
     success, _ = self.manager.start_worker('example_worker', worker_key='dead_test', parameters={'duration': 5})
     self.assertTrue(success)
+    self.wait_for_worker_status(self.manager, 'dead_test', 'RUNNING')
 
-    pid = self.manager.list_workers()[0]['pid']
     import psutil
 
-    psutil.Process(pid).kill()
-    self.wait_for_pid_dead(pid)
+    pid = next(w for w in self.manager.list_workers() if w['worker_key'] == 'dead_test')['pid']
+    proc = psutil.Process(pid)
+    proc.kill()
+    proc.wait(timeout=10)
 
     success2, result2 = self.manager.start_worker('example_worker', worker_key='dead_test', parameters={'duration': 5})
     self.assertTrue(success2, f'Second start should succeed: {result2}')

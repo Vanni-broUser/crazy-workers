@@ -22,6 +22,7 @@ class TestManagerRecoverer(BaseTestCase):
     restarted = self.manager.recover_workers()
     self.assertIn('recover_test', restarted)
 
+    self.wait_for_worker_status(self.manager, 'recover_test', 'RUNNING')
     workers = self.manager.list_workers()
     worker = next(w for w in workers if w['worker_key'] == 'recover_test')
     self.assertEqual(worker['status'], 'RUNNING')

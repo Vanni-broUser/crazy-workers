@@ -36,6 +36,7 @@ class TestCliRestore(BaseTestCase):
           self.assertIn('restore_me', output)
 
     # Verify it is actually running now
+    self.wait_for_worker_status(self.manager, 'restore_me', 'RUNNING')
     workers = self.manager.list_workers()
     worker = next(w for w in workers if w['worker_key'] == 'restore_me')
     self.assertEqual(worker['status'], 'RUNNING')

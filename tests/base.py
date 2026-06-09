@@ -106,5 +106,12 @@ class BaseTestCase(unittest.TestCase):
 
     self.wait_for(check, timeout=timeout, msg=f'Worker {key!r} never appeared in DB')
 
+  def wait_for_worker_pid(self, manager, key, timeout=10.0):
+    def check():
+      w = next((w for w in manager.list_workers() if w['worker_key'] == key), None)
+      return w is not None and w['pid'] is not None
+
+    self.wait_for(check, timeout=timeout, msg=f'Worker {key!r} never got a PID')
+
   def wait_for_pid_dead(self, pid, timeout=10.0):
     self.wait_for(lambda: not psutil.pid_exists(pid), timeout=timeout, msg=f'PID {pid} never died')

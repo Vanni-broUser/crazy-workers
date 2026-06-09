@@ -90,7 +90,7 @@ class TestManagerStopper(BaseTestCase):
       parameters={'child_type': 'infinite_worker', 'num_children': 1, 'workers_dir': self.workers_path},
     )
     self.assertTrue(success)
-    self.wait_for_worker_in_db(self.manager, 'child_0')
+    self.wait_for_worker_status(self.manager, 'child_0', 'RUNNING')
 
     workers = self.manager.list_workers()
     child = next((w for w in workers if w['worker_key'] == 'child_0'), None)

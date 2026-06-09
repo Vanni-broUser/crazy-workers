@@ -64,6 +64,7 @@ class TestExampleApp(BaseTestCase):
       mock_manager_class.return_value = self.manager
       create_app()
 
+    self.wait_for_worker_status(self.manager, 'startup_restore', 'RUNNING')
     workers = self.manager.list_workers()
     worker = next(w for w in workers if w['worker_key'] == 'startup_restore')
     self.assertEqual(worker['status'], 'RUNNING')
