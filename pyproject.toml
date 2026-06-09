@@ -1,0 +1,83 @@
+[project]
+name = "crazy-workers"
+version = "1.0.0"
+description = "A Python library for managing background worker processes with persistent state, automatic recovery, and a CLI."
+readme = "README.md"
+authors = [{ name = "GioVanni Colasanto" }]
+license = { text = "MIT" }
+keywords = ["workers", "background", "processes", "process-manager", "task-runner", "cli", "psutil"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+    "Topic :: System :: Systems Administration",
+    "Topic :: Utilities",
+]
+requires-python = ">=3.10"
+dependencies = [
+    "sqlalchemy>=2.0.0",
+    "psutil>=5.9.0",
+    "rich>=13.0.0",
+]
+
+[project.scripts]
+crazy-workers = "crazy_workers.cli:main"
+
+[project.optional-dependencies]
+dev = [
+    "ruff",
+    "pytest>=7.0",
+    "coverage",
+    "flask",
+]
+
+[project.urls]
+"Homepage" = "https://github.com/Vanni-broUser/crazy-workers"
+"Bug Tracker" = "https://github.com/Vanni-broUser/crazy-workers/issues"
+"Source" = "https://github.com/Vanni-broUser/crazy-workers"
+
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+include = ["crazy_workers*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+
+[tool.coverage.run]
+source = ["crazy_workers"]
+omit = ["*/venv/*", "*/build/*", "tests/*"]
+
+[tool.coverage.report]
+show_missing = true
+skip_covered = false
+fail_under = 95
+
+[tool.ruff]
+line-length = 120
+indent-width = 2
+
+[tool.ruff.format]
+quote-style = 'single'
+
+[tool.ruff.lint]
+select = ["E", "F", "T", "I"]
+ignore = ["COM812"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["crazy_workers", "tests"]
+section-order = ["third-party", "first-party", "local-folder"]
+default-section = "third-party"
+lines-after-imports = 2

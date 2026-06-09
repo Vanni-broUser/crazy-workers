@@ -1,0 +1,79 @@
+import json
+import os
+import shutil
+import sys
+import unittest
+from unittest.mock import patch
+
+from tests.base import BaseTestCase
+
+
+_WORKERS_SRC = os.path.join(
+  os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))),
+  'example_app',
+  'workers',
+)
+
+
+class TestBatchWorkerUnit(unittest.TestCase):
+  def _run(self, params=None, expect_exit=False):
+    argv = ['batch_worker.py', json.dumps(params)] if params is not None else ['batch_worker.py']
+    from example_app.workers import batch_worker
+
+    if expect_exit:
+      with patch.object(sys, 'argv', argv), patch('time.sleep'), self.assertLogs(level='INFO') as log:
+        with self.assertRaises(SystemExit) as ctx:
+          batch_worker.main()
+      return log.output, ctx.exception.code
+    else:
+      with patch.object(sys, 'argv', argv), patch('time.sleep'), self.assertLogs(level='INFO') as log:
+        batch_worker.main()
+      return log.output, 0
+
+  def test_default_params(self):
+    output, _ = self._run()
+    joined = '\n'.join(output)
+    self.assertIn('task1', joined)
+    self.assertIn('task2', joined)
+    self.assertIn('task3', joined)
+    self.assertIn('completed', joined)
+
+  def test_custom_items(self):
+    output, _ = self._run({'items': ['x', 'y'], 'delay': 0})
+    joined = '\n'.join(output)
+    self.assertIn('Processing: x', joined)
+    self.assertIn('Processing: y', joined)
+    self.assertIn('2/2', joined)
+
+  def test_progress_format(self):
+    output, _ = self._run({'items': ['a', 'b', 'c'], 'delay': 0})
+    joined = '\n'.join(output)
+    self.assertIn('1/3', joined)
+    self.assertIn('3/3', joined)
+
+  def test_empty_items(self):
+    output, _ = self._run({'items': [], 'delay': 0})
+    joined = '\n'.join(output)
+    self.assertIn('0 items', joined)
+    self.assertIn('completed', joined)
+
+
+class TestBatchWorkerSmoke(BaseTestCase):
+  def setUp(self):
+    super().setUp()
+    shutil.copy(os.path.join(_WORKERS_SRC, 'batch_worker.py'), self.workers_path)
+
+  def _log(self, worker_key):
+    return os.path.join(self.workers_path, '.service', 'logs', f'{worker_key}.log')
+
+  def test_processes_items_and_logs(self):
+    success, _ = self.manager.start_worker(
+      'batch_worker', worker_key='smoke_batch', parameters={'items': ['a', 'b'], 'delay': 0.1}
+    )
+    self.assertTrue(success)
+    self.wait_for_log(self._log('smoke_batch'), 'Processing: a')
+    self.wait_for_log(self._log('smoke_batch'), 'Processing: b')
+    with open(self._log('smoke_batch')) as f:
+      content = f.read()
+    self.assertIn('Processing: a', content)
+    self.assertIn('Processing: b', content)

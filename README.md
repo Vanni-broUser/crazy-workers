@@ -1,93 +1,211 @@
-# crazy-workers
+# Crazy Workers
 
+A Python library for managing background worker processes with persistent state, automatic crash recovery, and a built-in CLI.
 
+[![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
-## Getting started
+## Features
 
-To make it easy for you to get started with GitLab, here's a list of recommended next steps.
-
-Already a pro? Just edit this README.md and make it your own. Want to make it easy? [Use the template at the bottom](#editing-this-readme)!
-
-## Add your files
-
-* [Create](https://docs.gitlab.com/user/project/repository/web_editor/#create-a-file) or [upload](https://docs.gitlab.com/user/project/repository/web_editor/#upload-a-file) files
-* [Add files using the command line](https://docs.gitlab.com/topics/git/add_files/#add-files-to-a-git-repository) or push an existing Git repository with the following command:
-
-```
-cd existing_repo
-git remote add origin https://gitlab.com/generic-lab/crazy-workers/crazy-workers.git
-git branch -M main
-git push -uf origin main
-```
-
-## Integrate with your tools
-
-* [Set up project integrations](https://gitlab.com/generic-lab/crazy-workers/crazy-workers/-/settings/integrations)
-
-## Collaborate with your team
-
-* [Invite team members and collaborators](https://docs.gitlab.com/user/project/members/)
-* [Create a new merge request](https://docs.gitlab.com/user/project/merge_requests/creating_merge_requests/)
-* [Automatically close issues from merge requests](https://docs.gitlab.com/user/project/issues/managing_issues/#closing-issues-automatically)
-* [Enable merge request approvals](https://docs.gitlab.com/user/project/merge_requests/approvals/)
-* [Set auto-merge](https://docs.gitlab.com/user/project/merge_requests/auto_merge/)
-
-## Test and Deploy
-
-Use the built-in continuous integration in GitLab.
-
-* [Get started with GitLab CI/CD](https://docs.gitlab.com/ci/quick_start/)
-* [Analyze your code for known vulnerabilities with Static Application Security Testing (SAST)](https://docs.gitlab.com/user/application_security/sast/)
-* [Deploy to Kubernetes, Amazon EC2, or Amazon ECS using Auto Deploy](https://docs.gitlab.com/topics/autodevops/requirements/)
-* [Use pull-based deployments for improved Kubernetes management](https://docs.gitlab.com/user/clusters/agent/)
-* [Set up protected environments](https://docs.gitlab.com/ci/environments/protected_environments/)
-
-***
-
-# Editing this README
-
-When you're ready to make this README your own, just edit this file and use the handy template below (or feel free to structure it however you want - this is just a starting point!). Thanks to [makeareadme.com](https://www.makeareadme.com/) for this template.
-
-## Suggestions for a good README
-
-Every project is different, so consider which of these sections apply to yours. The sections used in the template are suggestions for most open source projects. Also keep in mind that while a README can be too long and detailed, too long is better than too short. If you think your README is too long, consider utilizing another form of documentation rather than cutting out information.
-
-## Name
-Choose a self-explaining name for your project.
-
-## Description
-Let people know what your project can do specifically. Provide context and add a link to any reference visitors might be unfamiliar with. A list of Features or a Background subsection can also be added here. If there are alternatives to your project, this is a good place to list differentiating factors.
-
-## Badges
-On some READMEs, you may see small images that convey metadata, such as whether or not all the tests are passing for the project. You can use Shields to add some to your README. Many services also have instructions for adding a badge.
-
-## Visuals
-Depending on what you are making, it can be a good idea to include screenshots or even a video (you'll frequently see GIFs rather than actual videos). Tools like ttygif can help, but check out Asciinema for a more sophisticated method.
+- **Persistent State** — SQLite database tracks worker status, PIDs, and parameters across restarts.
+- **Process Management** — Start, stop, and monitor background Python scripts as independent OS processes.
+- **Automatic Recovery** — Detects crashed workers and restarts them on application boot.
+- **Child Process Control** — On stop, terminates unmanaged subprocesses while preserving independently-managed nested workers.
+- **CLI Interface** — Manage workers from the terminal with interactive prompts and auto-discovery (see [CLI.md](https://github.com/Vanni-broUser/crazy-workers/blob/main/CLI.md)).
+- **Security** — Built-in protection against path traversal in worker type and key names.
+- **Observability** — Per-worker file logging; all service files (DB, lock, logs) live in a `.service/` folder inside your workers directory.
+- **Zombie Protection** — Distinguishes active processes from zombies using `psutil`.
+- **Gunicorn-safe** — File-based lock prevents concurrent recovery runs across multiple workers.
 
 ## Installation
-Within a particular ecosystem, there may be a common way of installing things, such as using Yarn, NuGet, or Homebrew. However, consider the possibility that whoever is reading your README is a novice and would like more guidance. Listing specific steps helps remove ambiguity and gets people to using your project as quickly as possible. If it only runs in a specific context like a particular programming language version or operating system or has dependencies that have to be installed manually, also add a Requirements subsection.
 
-## Usage
-Use examples liberally, and show the expected output if you can. It's helpful to have inline the smallest example of usage that you can demonstrate, while providing links to more sophisticated examples if they are too long to reasonably include in the README.
+```bash
+pip install crazy-workers
+```
 
-## Support
-Tell people where they can go to for help. It can be any combination of an issue tracker, a chat room, an email address, etc.
+Or from source:
 
-## Roadmap
-If you have ideas for releases in the future, it is a good idea to list them in the README.
+```bash
+git clone https://github.com/Vanni-broUser/crazy-workers
+cd crazy-workers
+pip install .
+```
 
-## Contributing
-State if you are open to contributions and what your requirements are for accepting them.
+## Quick Start
 
-For people who want to make changes to your project, it's helpful to have some documentation on how to get started. Perhaps there is a script that they should run or some environment variables that they need to set. Make these steps explicit. These instructions could also be useful to your future self.
+### 1. Create a worker script
 
-You can also document commands to lint the code or run tests. These steps help to ensure high code quality and reduce the likelihood that the changes inadvertently break something. Having instructions for running tests is especially helpful if it requires external setup, such as starting a Selenium server for testing in a browser.
+```python
+# workers/my_worker.py
+import json, sys, time
 
-## Authors and acknowledgment
-Show your appreciation to those who have contributed to the project.
+params = json.loads(sys.argv[1]) if len(sys.argv) > 1 else {}
+duration = params.get('duration', 60)
 
-## License
-For open source projects, say how it is licensed.
+for _ in range(duration):
+    time.sleep(1)
+```
 
-## Project status
-If you have run out of energy or time for your project, put a note at the top of the README saying that development has slowed down or stopped completely. Someone may choose to fork your project or volunteer to step in as a maintainer or owner, allowing your project to keep going. You can also make an explicit request for maintainers.
+### 2. Manage it from Python
+
+```python
+from crazy_workers import WorkerManager
+
+manager = WorkerManager('workers')
+
+# Start
+success, result = manager.start_worker(
+    'my_worker',
+    worker_key='job_1',
+    parameters={'duration': 30},
+)
+print(result['pid'])   # OS process ID
+print(result['status'])  # 'RUNNING'
+
+# List
+for w in manager.list_workers():
+    print(w['worker_key'], w['status'])
+
+# Stop
+manager.stop_worker('job_1')
+
+# Recover crashed workers (call on app startup)
+restarted = manager.recover_workers()
+
+manager.dispose()  # releases DB connection; does NOT kill workers
+```
+
+### 3. Or from the CLI
+
+```bash
+crazy-workers list
+crazy-workers start my_worker --key job_1 --params '{"duration": 30}'
+crazy-workers stop job_1
+crazy-workers restore
+```
+
+See [CLI.md](https://github.com/Vanni-broUser/crazy-workers/blob/main/CLI.md) for full CLI documentation.
+
+## API Reference
+
+### `WorkerManager(workers_dir, create_dir=True)`
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `workers_dir` | `str` | `'workers'` | Directory containing worker `.py` scripts |
+| `create_dir` | `bool` | `True` | Create `workers_dir` and `.service/` if they don't exist |
+
+### `start_worker(worker_type, worker_key=None, parameters=None, env=None)`
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `worker_type` | `str` | — | Filename (without `.py`) of the worker script |
+| `worker_key` | `str` | `worker_type` | Unique identifier; allows multiple instances of the same type |
+| `parameters` | `dict` | `{}` | JSON-serializable dict passed as `sys.argv[1]` to the worker |
+| `env` | `dict` | `None` | Extra environment variables injected into the worker process |
+
+Returns `(bool, dict | str)` — `(True, worker_dict)` on success, `(False, error_message)` on failure.
+
+### `stop_worker(worker_key)`
+
+Gracefully terminates the worker (SIGTERM → SIGKILL after timeout). Returns `(bool, str)`.
+
+### `list_workers()`
+
+Returns a list of worker dicts including RUNNING, STOPPED, CRASHED, and NEVER_STARTED (filesystem-discovered) workers.
+
+### `recover_workers()`
+
+Restarts any worker whose DB status is RUNNING but whose process is dead. Uses a file lock to prevent concurrent recovery. Returns a list of restarted keys.
+
+### `dispose()`
+
+Closes the database connection and clears internal process references. Does **not** kill background workers — they continue running independently.
+
+## Worker Script Contract
+
+A worker receives its parameters as a JSON string in `sys.argv[1]`:
+
+```python
+import json, sys
+
+params = json.loads(sys.argv[1]) if len(sys.argv) > 1 else {}
+# ... do work ...
+```
+
+## Project Structure
+
+```
+crazy_workers/       # Library package
+  core/              # WorkerManager, process engine, recovery lock
+  cli/               # CLI entry point, commands, discovery
+  database/          # SQLAlchemy schema and SQLite storage
+example_app/         # Flask demo application
+  app.py
+  workers/           # Example worker scripts
+tests/
+  core/              # Unit tests for core modules
+  cli/               # Unit tests for CLI modules
+  database/          # Unit tests for storage layer
+  integration/       # Full-stack integration tests (real processes)
+  app/               # Tests for the example Flask app
+```
+
+## Flask Integration
+
+```python
+from crazy_workers import WorkerManager
+
+def create_app():
+    app = Flask(__name__)
+    manager = WorkerManager('workers')
+
+    @app.route('/workers/start', methods=['POST'])
+    def start():
+        data = request.json
+        success, result = manager.start_worker(
+            data['worker_type'],
+            worker_key=data.get('worker_key'),
+            parameters=data.get('parameters', {}),
+        )
+        return (jsonify(result), 200) if success else (jsonify({'error': result}), 400)
+
+    manager.recover_workers()  # restart any crashed workers on boot
+    return app
+```
+
+See [`example_app/app.py`](https://github.com/Vanni-broUser/crazy-workers/blob/main/example_app/app.py) for a complete example.
+
+## Gunicorn / Multi-Process Servers
+
+When using a pre-fork server like Gunicorn:
+
+- **Recovery is atomic** — a file lock (`.service/workers.db.recovery.lock`) ensures `recover_workers()` runs once even when multiple workers boot simultaneously.
+- **Workers outlive their parent** — if a Gunicorn worker is recycled, background processes keep running. The next recovery cycle re-attaches or restarts them.
+
+## Development
+
+### Setup
+
+```bash
+git clone https://github.com/Vanni-broUser/crazy-workers
+cd crazy-workers
+pip install -e .[dev]
+```
+
+### Commands
+
+```bash
+# Lint and format
+ruff check . --fix && ruff format .
+
+# Run tests
+pytest
+
+# Run tests with coverage
+coverage run -m pytest && coverage report
+```
+
+### Standards
+
+See [AI.md](https://github.com/Vanni-broUser/crazy-workers/blob/main/AI.md) for the full coding and testing standards used in this project.
