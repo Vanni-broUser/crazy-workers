@@ -37,7 +37,7 @@ class TestManagerStopper(BaseTestCase):
         )
         session.add(worker)
 
-      with patch('crazy_workers.core.engine.is_process_running', return_value=True):
+      with patch('crazy_workers.core.manager.stopper.is_worker_process', return_value=True):
         success, msg = self.manager.stop_worker('timeout_test')
         self.assertTrue(success)
         mock_proc.kill.assert_called_once()
@@ -50,7 +50,7 @@ class TestManagerStopper(BaseTestCase):
         )
         session.add(worker)
 
-      with patch('crazy_workers.core.engine.is_process_running', return_value=True):
+      with patch('crazy_workers.core.manager.stopper.is_worker_process', return_value=True):
         success, msg = self.manager.stop_worker('exc_test')
         self.assertFalse(success)
         self.assertEqual(msg, 'Generic error')
@@ -104,6 +104,26 @@ class TestManagerStopper(BaseTestCase):
 
     # Cleanup child
     self.manager.stop_worker('child_0')
+
+  def test_stop_skips_termination_when_pid_reused(self):
+    """If the stored PID no longer belongs to the worker, do not signal it."""
+    with self.manager.storage.session_scope() as session:
+      worker = Worker(
+        worker_key='reused_pid', worker_type='example_worker', parameters={}, status=WorkerStatus.RUNNING, pid=12345
+      )
+      session.add(worker)
+
+    with patch('crazy_workers.core.manager.stopper.is_worker_process', return_value=False):
+      with patch('crazy_workers.core.manager.stopper.terminate_process') as mock_terminate:
+        success, msg = self.manager.stop_worker('reused_pid')
+
+    self.assertTrue(success)
+    mock_terminate.assert_not_called()
+
+    workers = self.manager.list_workers()
+    worker = next(w for w in workers if w['worker_key'] == 'reused_pid')
+    self.assertEqual(worker['status'], 'STOPPED')
+    self.assertIsNone(worker['pid'])
 
   def test_stop_worker_no_storage(self):
     orig = self.manager.storage

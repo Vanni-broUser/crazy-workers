@@ -12,6 +12,11 @@ import runpy
 import sys
 
 
+# Must match crazy_workers.core.engine.WORKER_KEY_FLAG. Kept as a local literal
+# so launching a worker doesn't import the package (and its heavy dependencies).
+_WORKER_KEY_FLAG = '--cw-key='
+
+
 def main():
   logging.basicConfig(
     level=logging.INFO,
@@ -20,8 +25,10 @@ def main():
     force=True,
   )
 
-  # Restore sys.argv so the worker sees [worker_path, json_params]
-  sys.argv = sys.argv[1:]
+  # Restore sys.argv so the worker sees [worker_path, json_params]. Drop any
+  # identity token the manager injected for PID-reuse detection — it is only
+  # meant to be visible from the outside, never to the worker script itself.
+  sys.argv = [a for a in sys.argv[1:] if not a.startswith(_WORKER_KEY_FLAG)]
 
   worker_path = sys.argv[0]
   sys.path.insert(0, os.path.dirname(os.path.abspath(worker_path)))

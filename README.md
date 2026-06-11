@@ -12,9 +12,10 @@ A Python library for managing background worker processes with persistent state,
 - **Automatic Recovery** — Detects crashed workers and restarts them on application boot.
 - **Child Process Control** — On stop, terminates unmanaged subprocesses while preserving independently-managed nested workers.
 - **CLI Interface** — Manage workers from the terminal with interactive prompts and auto-discovery (see [CLI.md](https://github.com/Vanni-broUser/crazy-workers/blob/main/CLI.md)).
-- **Security** — Built-in protection against path traversal in worker type and key names.
+- **Security** — Worker types and keys are restricted to a safe identifier charset (`A-Z a-z 0-9 _ -`), with a defence-in-depth check that the resolved script path stays inside the workers directory. This blocks path traversal on both Unix and Windows (including drive-relative names like `c:evil`).
 - **Observability** — Per-worker file logging; all service files (DB, lock, logs) live in a `.service/` folder inside your workers directory.
 - **Zombie Protection** — Distinguishes active processes from zombies using `psutil`.
+- **PID-Reuse Safe** — Each worker is tagged with an identity token on its command line; recovery and stop confirm a PID still belongs to the worker before acting, so a recycled PID is never mistaken for (or worse, killed as) a live worker. Works on both Unix and Windows.
 - **Gunicorn-safe** — File-based lock prevents concurrent recovery runs across multiple workers.
 
 ## Installation

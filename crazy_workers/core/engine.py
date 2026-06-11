@@ -5,6 +5,43 @@ import subprocess
 
 logger = logging.getLogger('crazy_workers')
 
+# Command-line flag used to tag a worker subprocess with its key. The same
+# prefix is stripped by crazy_workers._bootstrap so the worker never sees it.
+WORKER_KEY_FLAG = '--cw-key='
+
+
+def worker_key_token(worker_key):
+  """Returns the argv token that tags a subprocess as belonging to worker_key.
+
+  Injected into the subprocess command line at spawn time so a worker's
+  identity can later be confirmed by reading its command line — see
+  is_worker_process.
+  """
+  return f'{WORKER_KEY_FLAG}{worker_key}'
+
+
+def is_worker_process(pid, worker_key):
+  """True only if pid is alive AND its command line carries worker_key's tag.
+
+  This defeats PID reuse: a recycled PID now held by an unrelated process will
+  not carry our identity token, so it is correctly reported as 'not our
+  worker'. It relies on psutil.Process.cmdline(), which is readable for
+  same-user processes on both Unix and Windows — unlike the process
+  environment, which several platforms refuse to expose across processes.
+
+  Any failure to read the command line (the process vanished, or belongs to
+  another user) is treated as 'not our worker', the safe default for both
+  recovery (restart it) and stop (do not signal an unknown PID).
+  """
+  proc = get_running_process(pid)
+  if proc is None:
+    return False
+  try:
+    cmdline = proc.cmdline()
+  except (psutil.Error, OSError):
+    return False
+  return worker_key_token(worker_key) in cmdline
+
 
 def get_running_process(pid):
   """Returns a psutil.Process object if the PID exists and is not a zombie."""

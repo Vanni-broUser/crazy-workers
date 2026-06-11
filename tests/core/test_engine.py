@@ -3,7 +3,13 @@ import subprocess
 import sys
 from unittest.mock import MagicMock, patch
 
-from crazy_workers.core.engine import get_running_process, is_process_running, terminate_process
+from crazy_workers.core.engine import (
+  get_running_process,
+  is_process_running,
+  is_worker_process,
+  terminate_process,
+  worker_key_token,
+)
 from tests.base import BaseTestCase
 
 
@@ -122,6 +128,38 @@ class TestEngine(BaseTestCase):
     with patch('crazy_workers.core.engine.get_running_process', return_value=mock_proc):
       terminate_process(123, timeout=1)
     # lines 84-85: child.is_running() raises — swallowed correctly
+
+  def test_worker_key_token_format(self):
+    self.assertEqual(worker_key_token('job_1'), '--cw-key=job_1')
+
+  def test_is_worker_process_dead_pid(self):
+    self.assertFalse(is_worker_process(99999999, 'anything'))
+
+  def test_is_worker_process_matches_injected_token(self):
+    token = worker_key_token('identity_key')
+    proc = subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(10)', token])
+    try:
+      self.assertTrue(is_worker_process(proc.pid, 'identity_key'))
+      # A different key must NOT match the same process.
+      self.assertFalse(is_worker_process(proc.pid, 'other_key'))
+    finally:
+      proc.terminate()
+      proc.wait()
+
+  def test_is_worker_process_live_process_without_token(self):
+    # Simulates a recycled PID now held by an unrelated process.
+    proc = subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(10)'])
+    try:
+      self.assertFalse(is_worker_process(proc.pid, 'identity_key'))
+    finally:
+      proc.terminate()
+      proc.wait()
+
+  def test_is_worker_process_cmdline_unreadable(self):
+    mock_proc = MagicMock(spec=psutil.Process)
+    mock_proc.cmdline.side_effect = psutil.AccessDenied(pid=123)
+    with patch('crazy_workers.core.engine.get_running_process', return_value=mock_proc):
+      self.assertFalse(is_worker_process(123, 'identity_key'))
 
   def test_terminate_unexpected_exception_reraised(self):
     mock_proc = MagicMock(spec=psutil.Process)

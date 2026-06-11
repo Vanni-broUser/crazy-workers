@@ -1,15 +1,24 @@
 import json
 import logging
 import os
+import re
 import subprocess
 import sys
 from sqlalchemy import func
 from sqlalchemy.exc import IntegrityError
 
 from ...database.schema import Worker, WorkerStatus
+from ..engine import is_worker_process, worker_key_token
 
 
 logger = logging.getLogger('crazy_workers')
+
+# Worker types and keys become filesystem paths (the <type>.py script and the
+# <key>.log file). Restrict them to a safe identifier charset rather than trying
+# to blocklist every dangerous sequence — a blocklist missed, for example,
+# Windows drive-relative names like 'c:evil', which os.path.join treats as
+# absolute and silently escapes the target directory.
+_SAFE_NAME = re.compile(r'[A-Za-z0-9_-]+')
 
 
 def start_worker(manager, worker_type, worker_key=None, parameters=None, env=None):
@@ -41,15 +50,15 @@ def start_worker(manager, worker_type, worker_key=None, parameters=None, env=Non
 
 def _validate_inputs(worker_type, worker_key):
   for name, val in [('worker_type', worker_type), ('worker_key', worker_key)]:
-    if '..' in val or os.path.isabs(val) or '/' in val or '\\' in val:
-      logger.error(f'Invalid {name}: {val}. Potential path traversal attempt.')
+    if not isinstance(val, str) or not _SAFE_NAME.fullmatch(val):
+      logger.error(f'Invalid {name}: {val!r}. Only letters, digits, underscores and hyphens are allowed.')
       return False
   return True
 
 
 def _check_already_running(manager, worker, session):
   if worker and worker.status == WorkerStatus.RUNNING:
-    if manager._is_process_running(worker.pid):
+    if is_worker_process(worker.pid, worker.worker_key):
       logger.info(f'Worker {worker.worker_key} already running with PID {worker.pid}')
       return True
     else:
@@ -80,6 +89,20 @@ def _prepare_worker_record(worker, worker_type, worker_key, parameters, session)
 def _get_worker_script_path(manager, worker_type):
   worker_filename = f'{worker_type}.py'
   worker_path = os.path.join(manager.workers_dir, worker_filename)
+
+  # Defence in depth: confirm the resolved path stays inside workers_dir, even
+  # if the name validation is ever loosened or workers_dir contains symlinks.
+  workers_root = os.path.realpath(manager.workers_dir)
+  resolved = os.path.realpath(worker_path)
+  try:
+    inside = os.path.commonpath([workers_root, resolved]) == workers_root
+  except ValueError:
+    # Different drives on Windows → definitely outside workers_dir.
+    inside = False
+  if not inside:
+    logger.error(f'Resolved worker path {resolved} escapes workers directory {workers_root}')
+    return None
+
   if not os.path.exists(worker_path):
     logger.error(f'Worker file {worker_filename} not found in {manager.workers_dir}')
     return None
@@ -104,7 +127,15 @@ def _spawn_worker_process(manager, worker, worker_path, parameters, env, session
   stderr_dest = log_fh if log_fh else subprocess.DEVNULL
 
   process = subprocess.Popen(
-    [sys.executable, '-u', '-m', 'crazy_workers._bootstrap', worker_path, json.dumps(parameters)],
+    [
+      sys.executable,
+      '-u',
+      '-m',
+      'crazy_workers._bootstrap',
+      worker_key_token(worker.worker_key),
+      worker_path,
+      json.dumps(parameters),
+    ],
     stdout=stdout_dest,
     stderr=stderr_dest,
     text=True,

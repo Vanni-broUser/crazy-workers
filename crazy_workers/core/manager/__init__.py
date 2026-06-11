@@ -2,7 +2,6 @@ import logging
 import os
 
 from ...database.storage import Storage
-from ..engine import is_process_running
 from ..recovery import RecoveryLock
 from .lister import list_workers
 from .recoverer import recover_workers
@@ -51,10 +50,6 @@ class WorkerManager:
         self.storage = Storage(self.db_path)
       else:
         self.storage = None
-
-  def _is_process_running(self, pid):
-    """Internal wrapper for process check."""
-    return is_process_running(pid)
 
   def start_worker(self, worker_type, worker_key=None, parameters=None, env=None):
     return start_worker(self, worker_type, worker_key, parameters, env)

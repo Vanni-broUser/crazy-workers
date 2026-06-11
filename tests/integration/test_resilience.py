@@ -63,6 +63,8 @@ class TestResilience(BaseTestCase):
       'C:\\Windows\\System32\\cmd.exe',
       'sub/../../../secret',
       '..\\..\\test',
+      'c:evil',  # Windows drive-relative: os.path.join would silently escape the dir
+      'evil.py',  # dots are not part of the safe identifier charset
     ]
     for key in forbidden:
       success, message = self.manager.start_worker('example_worker', worker_key=key)
