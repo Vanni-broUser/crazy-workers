@@ -10,6 +10,12 @@ from crazy_workers import WorkerManager
 
 
 def create_app(config_override=None):
+  # SECURITY: start_worker() executes the <worker_type>.py script of the
+  # caller's choosing. Exposing it over HTTP — as below — turns it into a
+  # privileged operation: anyone who can reach these routes can run any worker
+  # script in the workers directory. This demo has NO authentication; put the
+  # routes behind auth (and ideally restrict worker_type to a known set) before
+  # using anything like this in production.
   app = Flask(__name__)
 
   # Configuration for the library

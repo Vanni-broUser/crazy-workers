@@ -20,6 +20,13 @@ logger = logging.getLogger('crazy_workers')
 # absolute and silently escapes the target directory.
 _SAFE_NAME = re.compile(r'[A-Za-z0-9_-]+')
 
+# How long to wait after spawning before declaring the worker started. This is
+# only an *immediate-failure* guard: it catches scripts that die on launch
+# (bad import, syntax error, missing module). A worker that fails later is
+# still reported RUNNING — RUNNING means "spawned successfully", not "will run
+# to completion". Keep this small so start_worker stays responsive.
+_STARTUP_GRACE_SECONDS = 0.05
+
 
 def start_worker(manager, worker_type, worker_key=None, parameters=None, env=None):
   if not manager.storage:
@@ -147,7 +154,7 @@ def _spawn_worker_process(manager, worker, worker_path, parameters, env, session
     log_fh.close()
 
   try:
-    process.wait(timeout=0.05)
+    process.wait(timeout=_STARTUP_GRACE_SECONDS)
     # If we reach here, it means the process exited immediately
     logger.error(f'Worker {worker.worker_key} failed to start immediately (exit code: {process.returncode})')
     worker.status = WorkerStatus.CRASHED

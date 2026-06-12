@@ -107,6 +107,8 @@ See [CLI.md](https://github.com/Vanni-broUser/crazy-workers/blob/main/CLI.md) fo
 
 Returns `(bool, dict | str)` — `(True, worker_dict)` on success, `(False, error_message)` on failure.
 
+> **Note on `RUNNING`:** success means the worker was *spawned* and survived a brief startup grace period that catches immediate launch failures (bad import, missing module). It does **not** guarantee the worker will run to completion — a worker that fails later is still reported `RUNNING` until the next `list_workers()` / `recover_workers()` reconciles its state.
+
 ### `stop_worker(worker_key)`
 
 Gracefully terminates the worker (SIGTERM → SIGKILL after timeout). Returns `(bool, str)`.
@@ -154,6 +156,8 @@ tests/
 
 ## Flask Integration
 
+> ⚠️ **Security:** `start_worker()` runs the worker script named by the caller. Exposing it over HTTP makes it a **privileged operation** — anyone who can reach the route can launch any script in your workers directory. Put such routes behind authentication, and prefer validating `worker_type` against a known allow-list of expected workers. The example below is a minimal demo with **no auth**.
+
 ```python
 from crazy_workers import WorkerManager
 
@@ -183,6 +187,10 @@ When using a pre-fork server like Gunicorn:
 
 - **Recovery is atomic** — a file lock (`.service/workers.db.recovery.lock`) ensures `recover_workers()` runs once even when multiple workers boot simultaneously.
 - **Workers outlive their parent** — if a Gunicorn worker is recycled, background processes keep running. The next recovery cycle re-attaches or restarts them.
+
+## Logs
+
+Each worker's stdout/stderr is appended to `.service/logs/<worker_key>.log`. These files are written directly by the worker process, so the library does **not** rotate them — they grow until you act. For long-lived deployments, rotate them externally (e.g. `logrotate` with `copytruncate`) or have your worker script configure its own `logging.handlers.RotatingFileHandler` instead of writing to stdout/stderr.
 
 ## Development
 
