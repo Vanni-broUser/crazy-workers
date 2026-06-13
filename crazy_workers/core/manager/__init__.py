@@ -82,6 +82,11 @@ class WorkerManager:
       logger.debug('Recovery lock held by another process. Skipping.')
       return []
 
+  def update_worker_parameters(self, worker_key, parameters):
+    if self.storage:
+      return self.storage.update_worker_parameters(worker_key, parameters)
+    return False
+
   def dispose(self):
     """Clean up resources like database connections. Does NOT kill background processes."""
     self._active_processes.clear()

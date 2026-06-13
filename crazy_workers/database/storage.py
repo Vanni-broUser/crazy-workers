@@ -52,5 +52,15 @@ class Storage:
     finally:
       session.close()
 
+  def update_worker_parameters(self, worker_key, parameters):
+    from .schema import Worker
+
+    with self.session_scope() as session:
+      worker = session.query(Worker).filter_by(worker_key=worker_key).first()
+      if worker:
+        worker.parameters = parameters
+        return True
+      return False
+
   def dispose(self):
     self.engine.dispose()
