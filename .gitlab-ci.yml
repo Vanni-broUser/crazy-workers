@@ -1,5 +1,9 @@
 stages:
   - lint
+  - test
+  - publish
 
 include:
   - local: 'gitlab/lint.yml'
+  - local: 'gitlab/test.yml'
+  - local: 'gitlab/publish.yml'

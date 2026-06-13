@@ -1,0 +1,11 @@
+test:
+  stage: test
+  image: python:3.10
+  interruptible: true
+  before_script:
+    - python -m pip install --upgrade pip
+    - pip install .[dev]
+    - pip install coverage
+  script:
+    - coverage run -m unittest discover tests
+    - coverage report --fail-under=90
