@@ -1,14 +1,10 @@
-import json
 import logging
 import os
 import re
-import subprocess
-import sys
 from sqlalchemy import func
 from sqlalchemy.exc import IntegrityError
 
 from ...database.schema import Worker, WorkerStatus
-from ..engine import is_worker_process, worker_key_token
 
 
 logger = logging.getLogger('crazy_workers')
@@ -19,13 +15,6 @@ logger = logging.getLogger('crazy_workers')
 # Windows drive-relative names like 'c:evil', which os.path.join treats as
 # absolute and silently escapes the target directory.
 _SAFE_NAME = re.compile(r'[A-Za-z0-9_-]+')
-
-# How long to wait after spawning before declaring the worker started. This is
-# only an *immediate-failure* guard: it catches scripts that die on launch
-# (bad import, syntax error, missing module). A worker that fails later is
-# still reported RUNNING — RUNNING means "spawned successfully", not "will run
-# to completion". Keep this small so start_worker stays responsive.
-_STARTUP_GRACE_SECONDS = 0.05
 
 
 def start_worker(manager, worker_type, worker_key=None, parameters=None, env=None):
@@ -65,7 +54,7 @@ def _validate_inputs(worker_type, worker_key):
 
 def _check_already_running(manager, worker, session):
   if worker and worker.status == WorkerStatus.RUNNING:
-    if is_worker_process(worker.pid, worker.worker_key):
+    if manager.backend.is_alive(pid=worker.pid, worker_key=worker.worker_key):
       logger.info(f'Worker {worker.worker_key} already running with PID {worker.pid}')
       return True
     else:
@@ -117,59 +106,27 @@ def _get_worker_script_path(manager, worker_type):
 
 
 def _spawn_worker_process(manager, worker, worker_path, parameters, env, session):
-  child_env = os.environ.copy()
-  if env:
-    child_env.update(env)
-
   log_file_path = os.path.join(manager.logs_dir, f'{worker.worker_key}.log')
-  try:
-    log_fh = open(log_file_path, 'a')
-    logger.info(f'Worker {worker.worker_key} logging to {log_file_path}')
-  except Exception as e:
-    logger.error(f'Failed to open log file for worker {worker.worker_key}: {e}')
-    log_fh = None
 
-  # log_fh ownership is transferred to Popen; do NOT close it here.
-  stdout_dest = log_fh if log_fh else subprocess.DEVNULL
-  stderr_dest = log_fh if log_fh else subprocess.DEVNULL
-
-  process = subprocess.Popen(
-    [
-      sys.executable,
-      '-u',
-      '-m',
-      'crazy_workers._bootstrap',
-      worker_key_token(worker.worker_key),
-      worker_path,
-      json.dumps(parameters),
-    ],
-    stdout=stdout_dest,
-    stderr=stderr_dest,
-    text=True,
-    env=child_env,
+  handle = manager.backend.spawn(
+    worker_key=worker.worker_key,
+    worker_type=worker.worker_type,
+    worker_path=worker_path,
+    parameters=parameters,
+    env=env,
+    log_path=log_file_path,
   )
 
-  # Close our copy of the handle — Popen duplicated it via os.dup2 internally.
-  if log_fh:
-    log_fh.close()
-
-  try:
-    process.wait(timeout=_STARTUP_GRACE_SECONDS)
-    # If we reach here, it means the process exited immediately
-    logger.error(f'Worker {worker.worker_key} failed to start immediately (exit code: {process.returncode})')
+  if handle is None:
     worker.status = WorkerStatus.CRASHED
     worker.pid = None
     session.commit()
     return False, 'Worker process failed to start'
-  except subprocess.TimeoutExpired:
-    # This is the expected case: the process is still running after the timeout
-    pass
 
-  worker.pid = process.pid
+  worker.pid = handle.pid
   worker.status = WorkerStatus.RUNNING
   worker.last_started_at = func.now()
   session.commit()
 
-  manager._active_processes[worker.worker_key] = process
-  logger.info(f'Worker {worker.worker_key} started with PID {worker.pid}')
+  manager._active_processes[worker.worker_key] = handle
   return True, worker.to_dict()

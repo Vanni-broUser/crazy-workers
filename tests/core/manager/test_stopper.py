@@ -37,7 +37,7 @@ class TestManagerStopper(BaseTestCase):
         )
         session.add(worker)
 
-      with patch('crazy_workers.core.manager.stopper.is_worker_process', return_value=True):
+      with patch.object(self.manager.backend, 'is_alive', return_value=True):
         success, msg = self.manager.stop_worker('timeout_test')
         self.assertTrue(success)
         mock_proc.kill.assert_called_once()
@@ -50,7 +50,7 @@ class TestManagerStopper(BaseTestCase):
         )
         session.add(worker)
 
-      with patch('crazy_workers.core.manager.stopper.is_worker_process', return_value=True):
+      with patch.object(self.manager.backend, 'is_alive', return_value=True):
         success, msg = self.manager.stop_worker('exc_test')
         self.assertFalse(success)
         self.assertEqual(msg, 'Generic error')
@@ -113,8 +113,8 @@ class TestManagerStopper(BaseTestCase):
       )
       session.add(worker)
 
-    with patch('crazy_workers.core.manager.stopper.is_worker_process', return_value=False):
-      with patch('crazy_workers.core.manager.stopper.terminate_process') as mock_terminate:
+    with patch.object(self.manager.backend, 'is_alive', return_value=False):
+      with patch.object(self.manager.backend, 'terminate') as mock_terminate:
         success, msg = self.manager.stop_worker('reused_pid')
 
     self.assertTrue(success)

@@ -51,7 +51,7 @@ class TestManagerStarter(BaseTestCase):
     self.assertFalse(success)
     self.assertIn('not found', msg)
 
-  @patch('crazy_workers.core.manager.starter.subprocess.Popen')
+  @patch('crazy_workers.core.backend.subprocess.Popen')
   def test_library_immediate_failure(self, mock_popen):
     # Setup a mock process that appears to have exited with code 1
     mock_proc = mock_popen.return_value

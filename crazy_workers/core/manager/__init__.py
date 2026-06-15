@@ -2,6 +2,7 @@ import logging
 import os
 
 from ...database.storage import Storage
+from ..backend import SubprocessBackend
 from ..recovery import RecoveryLock
 from .lister import list_workers
 from .recoverer import recover_workers
@@ -13,7 +14,7 @@ logger = logging.getLogger('crazy_workers')
 
 
 class WorkerManager:
-  def __init__(self, workers_dir='workers', create_dir=True):
+  def __init__(self, workers_dir='workers', create_dir=True, backend=None):
     self.workers_dir = workers_dir
     self._validate_workers_dir(create_dir)
 
@@ -22,7 +23,28 @@ class WorkerManager:
     self.db_path = os.path.join(self.service_dir, 'workers.db')
 
     self._initialize_storage(create_dir)
-    self._active_processes = {}  # worker_key -> Popen object
+    # The backend is the only component that touches OS processes. The default
+    # spawns real subprocesses; tests can swap in a fake one (see for_testing).
+    self.backend = backend or SubprocessBackend()
+    self._active_processes = {}  # worker_key -> WorkerHandle
+
+  @classmethod
+  def for_testing(cls, workers_dir='workers', mode='fake', create_dir=True):
+    """Build a manager wired to a test backend instead of real OS processes.
+
+    The state machine (SQLite storage, recovery, validation) stays real and
+    runs in-process; only process spawning/termination is faked. The chosen
+    backend is also exposed as `manager.test` for assertions and control
+    (e.g. ``manager.test.started_types``, ``manager.test.crash(key)``).
+
+    mode='fake' records orchestration decisions without launching anything.
+    """
+    from ...testing import make_test_backend
+
+    backend = make_test_backend(mode)
+    manager = cls(workers_dir, create_dir=create_dir, backend=backend)
+    manager.test = backend
+    return manager
 
   def __enter__(self):
     return self

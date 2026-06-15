@@ -2,7 +2,6 @@ import logging
 import os
 
 from ...database.schema import Worker, WorkerStatus
-from ..engine import is_worker_process
 
 
 logger = logging.getLogger('crazy_workers')
@@ -39,7 +38,7 @@ def list_workers(manager):
     for worker in db_workers:
       # Update status if dead
       if worker.status == WorkerStatus.RUNNING:
-        if not is_worker_process(worker.pid, worker.worker_key):
+        if not manager.backend.is_alive(pid=worker.pid, worker_key=worker.worker_key):
           logger.warning(
             f'Worker {worker.worker_key} found in RUNNING state but PID {worker.pid} is dead. Updating status.'
           )

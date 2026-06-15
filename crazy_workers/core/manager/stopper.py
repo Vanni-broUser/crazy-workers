@@ -2,7 +2,6 @@ import logging
 from sqlalchemy import func
 
 from ...database.schema import Worker, WorkerStatus
-from ..engine import is_worker_process, terminate_process
 
 
 logger = logging.getLogger('crazy_workers')
@@ -36,15 +35,15 @@ def stop_worker(manager, worker_key):
     }
 
   logger.info(f'Stopping worker {worker_key} (PID {pid})')
-  process = manager._active_processes.get(worker_key)
+  handle = manager._active_processes.get(worker_key)
 
   # Guard against PID reuse: confirm the PID still belongs to THIS worker before
   # signalling it. After a crash/restart — or in a fresh manager that never held
   # this worker's handle — the OS may have recycled the PID for an unrelated
   # process; terminating it blindly would take down the wrong process.
-  if is_worker_process(pid, worker_key):
+  if manager.backend.is_alive(pid=pid, worker_key=worker_key):
     try:
-      terminate_process(pid, popen_process=process, exclude_pids=managed_pids)
+      manager.backend.terminate(pid=pid, worker_key=worker_key, handle=handle, exclude_pids=managed_pids)
     except Exception as e:
       logger.error(f'Error stopping worker {worker_key}: {e}')
       return False, str(e)

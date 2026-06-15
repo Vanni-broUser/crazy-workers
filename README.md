@@ -218,3 +218,16 @@ coverage run -m pytest && coverage report
 ### Standards
 
 See [AI.md](https://github.com/Vanni-broUser/crazy-workers/blob/main/AI.md) for the full coding and testing standards used in this project.
+
+## Support the project ❤️
+
+crazy-workers is free and open-source (MIT). If it saves you time or powers your work,
+consider supporting its development:
+
+- **GitHub Sponsors** — recurring or one-time, 0% platform fee: https://github.com/sponsors/Vanni-broUser
+- **Stripe** — one-time card donation via secure checkout: _Stripe Payment Link (coming soon)_
+- **⭐ Star the repo** — free, and it really helps visibility.
+
+> The Stripe link is configured via a [Payment Link](https://stripe.com/docs/payment-links).
+> Replace the placeholder above (and in [`.github/FUNDING.yml`](.github/FUNDING.yml)) with your real
+> `https://buy.stripe.com/...` URL once created.

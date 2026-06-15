@@ -1,7 +1,6 @@
 import logging
 
 from ...database.schema import Worker, WorkerStatus
-from ..engine import is_worker_process
 
 
 logger = logging.getLogger('crazy_workers')
@@ -17,7 +16,7 @@ def recover_workers(manager):
 
   restarted = []
   for key, w_type, params, pid in to_process:
-    if not is_worker_process(pid, key):
+    if not manager.backend.is_alive(pid=pid, worker_key=key):
       logger.info(f'Recovering worker {key}...')
       success, _ = manager.start_worker(w_type, key, params)
       if success:
