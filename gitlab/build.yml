@@ -1,0 +1,17 @@
+build_check:
+  stage: test
+  image: python:3.11
+  interruptible: true
+  rules:
+    - if: '$CI_COMMIT_TAG'
+      when: never
+    - if: '$CI_COMMIT_BRANCH != "main"'
+  before_script:
+    - python -m pip install --upgrade pip
+    - pip install build twine
+  script:
+    - python -m build
+    - twine check dist/*
+    - python -m venv /tmp/clean
+    - /tmp/clean/bin/pip install dist/*.whl
+    - /tmp/clean/bin/python -c "from crazy_workers import WorkerManager; from crazy_workers.testing import FakeBackend, wait_for, wait_for_log; print('artifact import OK')"

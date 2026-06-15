@@ -5,5 +5,6 @@ stages:
 
 include:
   - local: 'gitlab/lint.yml'
+  - local: 'gitlab/build.yml'
   - local: 'gitlab/test.yml'
   - local: 'gitlab/publish.yml'

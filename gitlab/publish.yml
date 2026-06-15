@@ -1,42 +1,18 @@
-# Publishes to PyPI using GitLab → PyPI Trusted Publishing (OIDC).
-# No long-lived PYPI_API_TOKEN is needed: GitLab mints a short-lived OIDC
-# token, which is exchanged for a one-time PyPI API token at upload time.
-#
-# Prerequisite (one-time, on PyPI):
-#   Project crazy-workers → Manage → Publishing → Add a new publisher → GitLab
-#     Namespace:           generic-lab/crazy-workers   (path before the project)
-#     Project name:        crazy-workers
-#     Top-level pipeline:  .gitlab-ci.yml
-#     Environment name:    pypi   (optional — see `environment:` below)
-# The PyPI project already exists, so this is "add a publisher" (not a pending
-# one). PyPI allows several trusted publishers per project: the GitLab one can
-# live alongside (or replace) the older GitHub Actions publisher.
-# Works even though the GitLab repo is private: PyPI only verifies the OIDC
-# claims, not repo visibility. NOTE: PyPI refuses to re-upload an existing
-# version — bump `version` in pyproject.toml past whatever is already on PyPI
-# before tagging.
 publish:
   stage: publish
   image: python:3.11
-  # GitLab mints the OIDC JWT into this env var. `aud` MUST be `pypi`
-  # (use `testpypi` when targeting TestPyPI).
   id_tokens:
     PYPI_ID_TOKEN:
       aud: pypi
   rules:
     - if: '$CI_COMMIT_TAG =~ /^v.*/'
-  # If you set an "Environment name" on the PyPI publisher, it must match here.
-  # Otherwise leave this commented out.
-  # environment: pypi
   before_script:
     - apt-get update && apt-get install -y --no-install-recommends jq
     - python -m pip install --upgrade pip
     - pip install build twine id
   script:
-    # 1. Exchange the GitLab OIDC token for a short-lived PyPI API token.
     - oidc_token="$(python -m id pypi)"
     - resp="$(curl -sS -X POST https://pypi.org/_/oidc/mint-token -d "{\"token\":\"${oidc_token}\"}")"
     - api_token="$(echo "${resp}" | jq -r '.token')"
-    # 2. Build and upload.
     - python -m build
     - TWINE_USERNAME="__token__" TWINE_PASSWORD="${api_token}" twine upload dist/*
