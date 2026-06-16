@@ -17,6 +17,7 @@ A Python library for managing background worker processes with persistent state,
 - **Zombie Protection** — Distinguishes active processes from zombies using `psutil`.
 - **PID-Reuse Safe** — Each worker is tagged with an identity token on its command line; recovery and stop confirm a PID still belongs to the worker before acting, so a recycled PID is never mistaken for (or worse, killed as) a live worker. Works on both Unix and Windows.
 - **Gunicorn-safe** — File-based lock prevents concurrent recovery runs across multiple workers.
+- **Testable** — Drive your orchestration with a `FakeBackend` (no real processes) and import polling helpers for the few genuine end-to-end tests. See [Testing your app](#testing-your-app).
 
 ## Installation
 
@@ -136,6 +137,90 @@ params = json.loads(sys.argv[1]) if len(sys.argv) > 1 else {}
 # ... do work ...
 ```
 
+## Testing your app
+
+Code that uses `WorkerManager` has two kinds of logic worth testing:
+**orchestration** (which workers start, pairing, rollback, recovery) and the
+**work itself** (does the worker actually do its job). `crazy_workers.testing`
+makes both fast and non-flaky.
+
+### Orchestration — without launching a single process
+
+`WorkerManager.for_testing()` wires a **FakeBackend**: spawning and termination
+are faked, but the state machine (SQLite, recovery, validation) stays **real**
+and runs in-process. The backend is exposed as `manager.test` for assertions.
+
+```python
+from crazy_workers import WorkerManager
+
+def test_starts_recorder_and_renamer():
+    manager = WorkerManager.for_testing('workers')  # FakeBackend, no processes
+
+    manager.start_worker('recorder', worker_key='cam1', parameters={'device': 'cam1'})
+    manager.start_worker('renamer', worker_key='renamer_cam1', parameters={'output_dir': '/data/cam1'})
+
+    assert manager.test.started_types == ['recorder', 'renamer']
+    assert manager.test.is_running('cam1')
+    assert manager.test.parameters_for('renamer_cam1') == {'output_dir': '/data/cam1'}
+    manager.dispose()
+
+
+def test_recovery_restarts_a_crash():
+    manager = WorkerManager.for_testing('workers')
+    manager.start_worker('recorder', worker_key='cam1')
+
+    manager.test.crash('cam1')      # simulate an unexpected death
+    manager.recover_workers()       # the real recovery path runs in-process
+
+    assert manager.test.start_count('cam1') == 2
+    assert manager.test.is_running('cam1')
+    manager.dispose()
+```
+
+`workers_dir` must still contain the `<type>.py` files (`start_worker` checks
+the script exists), but the fake backend never executes them — empty files are
+enough.
+
+`manager.test` exposes:
+
+| Member | Returns |
+|---|---|
+| `started_types` / `started_keys` | every spawn, in order (a restart appears twice) |
+| `running_keys` | keys whose latest process is still "alive" |
+| `is_running(key)` | bool |
+| `start_count(key)` | how many times the key was (re)started |
+| `parameters_for(key)` | parameters of the most recent spawn |
+| `crash(key)` | simulate an unexpected death (without a stop) |
+
+### The real thing — polling helpers, not `sleep`
+
+The few tests that *must* launch real processes should wait on conditions,
+never fixed sleeps. `crazy_workers.testing` exposes the helpers used by the
+library's own suite:
+
+```python
+from crazy_workers.testing import wait_for_worker_status, wait_for_log, wait_for_pid_dead
+
+manager = WorkerManager('workers')
+ok, res = manager.start_worker('recorder', worker_key='cam1')
+
+wait_for_worker_status(manager, 'cam1', 'RUNNING')
+wait_for_log('workers/.service/logs/cam1.log', 'recording started')
+# ... assert the worker actually did its job ...
+manager.stop_worker('cam1')
+wait_for_pid_dead(res['pid'])
+```
+
+Available: `wait_for`, `wait_for_file`, `wait_for_log`, `wait_for_worker_status`,
+`wait_for_worker_in_db`, `wait_for_worker_pid`, `wait_for_pid_dead`. Each raises
+`AssertionError` with a useful message on timeout.
+
+> **What the fake covers — and what it doesn't.** `for_testing`/FakeBackend
+> tests *orchestration*, not "the worker actually records / sends / converts".
+> Keep a small number of real end-to-end tests for that, made stable with the
+> polling helpers above, and move everything else — the bulk — into the fast,
+> deterministic fake world.
+
 ## Project Structure
 
 ```
@@ -143,6 +228,7 @@ crazy_workers/       # Library package
   core/              # WorkerManager, process engine, recovery lock
   cli/               # CLI entry point, commands, discovery
   database/          # SQLAlchemy schema and SQLite storage
+  testing/           # FakeBackend + polling helpers for consumer test suites
 example_app/         # Flask demo application
   app.py
   workers/           # Example worker scripts
@@ -150,6 +236,7 @@ tests/
   core/              # Unit tests for core modules
   cli/               # Unit tests for CLI modules
   database/          # Unit tests for storage layer
+  testing/           # Tests for the FakeBackend and polling helpers
   integration/       # Full-stack integration tests (real processes)
   app/               # Tests for the example Flask app
 ```
