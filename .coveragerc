@@ -3,6 +3,7 @@ source = .
 omit =
     tests/*
     venv/*
+    *__main__.py
 
 [report]
 show_missing = True

@@ -1,5 +1,8 @@
 import os
+import shutil
 import tempfile
+import unittest
+from sqlalchemy import create_engine, text
 
 from crazy_workers.database.schema import Worker, WorkerStatus
 from crazy_workers.database.storage import Storage
@@ -49,3 +52,32 @@ class TestStorage(BaseTestCase):
     with self.storage.session_scope() as session:
       count = session.query(Worker).count()
       self.assertEqual(count, 0)
+
+
+class TestStorageBackends(unittest.TestCase):
+  def setUp(self):
+    self.tmp = tempfile.mkdtemp()
+    self.addCleanup(shutil.rmtree, self.tmp, ignore_errors=True)
+
+  def test_storage_from_db_url(self):
+    url = f'sqlite:///{os.path.join(self.tmp, "url.db")}'
+    storage = Storage(db_url=url)
+    with storage.session_scope() as session:
+      session.add(Worker(worker_key='k', worker_type='t', status=WorkerStatus.STOPPED))
+    with storage.session_scope() as session:
+      self.assertEqual(session.query(Worker).count(), 1)
+    storage.dispose()
+
+  def test_storage_reuses_shared_engine_and_does_not_dispose_it(self):
+    engine = create_engine(f'sqlite:///{os.path.join(self.tmp, "shared.db")}')
+    storage = Storage(engine=engine)
+
+    # crazy_workers tables are created inside the shared engine's database.
+    with storage.session_scope() as session:
+      session.add(Worker(worker_key='k', worker_type='t', status=WorkerStatus.STOPPED))
+
+    storage.dispose()  # must NOT dispose an engine it does not own
+    with engine.connect() as conn:
+      count = conn.execute(text('SELECT COUNT(*) FROM workers')).scalar()
+    self.assertEqual(count, 1)
+    engine.dispose()

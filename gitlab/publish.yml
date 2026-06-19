@@ -1,6 +1,8 @@
 publish:
   stage: publish
   image: python:3.11
+  tags:
+    - test
   id_tokens:
     PYPI_ID_TOKEN:
       aud: pypi

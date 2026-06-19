@@ -8,8 +8,10 @@ A Python library for managing background worker processes with persistent state,
 ## Features
 
 - **Persistent State** — SQLite database tracks worker status, PIDs, and parameters across restarts.
+- **Backend Integration** — Co-locate crazy_workers' tables in your project's database (pass a SQLAlchemy engine or URL), inject a shared `DATABASE_URL` into every worker, and recover workers automatically when the backend boots. See [Backend integration](#backend-integration).
 - **Process Management** — Start, stop, and monitor background Python scripts as independent OS processes.
 - **Automatic Recovery** — Detects crashed workers and restarts them on application boot.
+- **Automatic Boot-Restore** — On Linux and Windows, starting a worker transparently installs a per-user OS hook (a systemd user unit / a logon Scheduled Task) that runs recovery after a machine reboot — no host application required. Opt out with `CRAZY_WORKERS_NO_BOOT`. See [Automatic boot-restore](#automatic-boot-restore).
 - **Child Process Control** — On stop, terminates unmanaged subprocesses while preserving independently-managed nested workers.
 - **CLI Interface** — Manage workers from the terminal with interactive prompts and auto-discovery (see [CLI.md](https://github.com/Vanni-broUser/crazy-workers/blob/main/CLI.md)).
 - **Security** — Worker types and keys are restricted to a safe identifier charset (`A-Z a-z 0-9 _ -`), with a defence-in-depth check that the resolved script path stays inside the workers directory. This blocks path traversal on both Unix and Windows (including drive-relative names like `c:evil`).
@@ -80,22 +82,30 @@ manager.dispose()  # releases DB connection; does NOT kill workers
 ### 3. Or from the CLI
 
 ```bash
-crazy-workers list
+crazy-workers status
 crazy-workers start my_worker --key job_1 --params '{"duration": 30}'
 crazy-workers stop job_1
-crazy-workers restore
 ```
 
 See [CLI.md](https://github.com/Vanni-broUser/crazy-workers/blob/main/CLI.md) for full CLI documentation.
 
 ## API Reference
 
-### `WorkerManager(workers_dir, create_dir=True)`
+### `WorkerManager(workers_dir, create_dir=True, ...)`
 
 | Parameter | Type | Default | Description |
 |-----------|------|---------|-------------|
 | `workers_dir` | `str` | `'workers'` | Directory containing worker `.py` scripts |
 | `create_dir` | `bool` | `True` | Create `workers_dir` and `.service/` if they don't exist |
+| `backend` | `ProcessBackend` | `None` | Process backend; the default spawns real subprocesses (tests inject a fake) |
+| `auto_boot` | `bool` | `True` | Install the per-user OS boot-restore hook on first start — see [Automatic boot-restore](#automatic-boot-restore) |
+| `boot_provider` | `BootProvider` | `None` | Override the boot-restore mechanism (mainly a test seam) |
+| `db_url` | `str` | `None` | SQLAlchemy URL for worker state; defaults to SQLite under `.service/` |
+| `engine` | `Engine` | `None` | Reuse an existing SQLAlchemy engine so the tables live in your database; **not** disposed by crazy_workers |
+| `worker_env` | `dict` | `None` | Environment variables injected into **every** spawned worker (e.g. `DATABASE_URL`) |
+| `auto_recover` | `bool` | `True` | Recover dead-but-`RUNNING` workers when the manager is constructed |
+
+See [Backend integration](#backend-integration) for `db_url` / `engine` / `worker_env` / `auto_recover`.
 
 ### `start_worker(worker_type, worker_key=None, parameters=None, env=None)`
 
@@ -122,6 +132,8 @@ Returns a list of worker dicts including RUNNING, STOPPED, CRASHED, and NEVER_ST
 
 Restarts any worker whose DB status is RUNNING but whose process is dead. Uses a file lock to prevent concurrent recovery. Returns a list of restarted keys.
 
+> You rarely call this directly: it runs automatically when the manager is constructed (`auto_recover=True`) and after a machine reboot via the boot hook. It remains available as an explicit, idempotent trigger.
+
 ### `dispose()`
 
 Closes the database connection and clears internal process references. Does **not** kill background workers — they continue running independently.
@@ -136,6 +148,12 @@ import json, sys
 params = json.loads(sys.argv[1]) if len(sys.argv) > 1 else {}
 # ... do work ...
 ```
+
+A worker is a separate process, so it cannot be handed a live object (e.g. a DB
+connection). Pass **configuration** instead: the manager's `worker_env` (and any
+per-call `env`) is injected as environment variables, so a worker reads, say,
+`os.environ['DATABASE_URL']` and opens its own connection. See
+[`example_app/workers/db_writer.py`](https://github.com/Vanni-broUser/crazy-workers/blob/main/example_app/workers/db_writer.py).
 
 ## Testing your app
 
@@ -226,8 +244,9 @@ Available: `wait_for`, `wait_for_file`, `wait_for_log`, `wait_for_worker_status`
 ```
 crazy_workers/       # Library package
   core/              # WorkerManager, process engine, recovery lock
+  boot/              # Automatic per-user boot-restore (systemd user unit / scheduled task)
   cli/               # CLI entry point, commands, discovery
-  database/          # SQLAlchemy schema and SQLite storage
+  database/          # SQLAlchemy schema and pluggable storage (SQLite, or a shared engine/URL)
   testing/           # FakeBackend + polling helpers for consumer test suites
 example_app/         # Flask demo application
   app.py
@@ -248,9 +267,16 @@ tests/
 ```python
 from crazy_workers import WorkerManager
 
-def create_app():
+def create_app(db_engine, db_url):
     app = Flask(__name__)
-    manager = WorkerManager('workers')
+
+    manager = WorkerManager(
+        'workers',
+        engine=db_engine,                     # crazy_workers' tables live in YOUR database
+        worker_env={'DATABASE_URL': db_url},  # injected into every worker
+        # auto_recover=True (default): when the app boots, workers left RUNNING
+        # with a dead PID are restored automatically — no explicit call needed.
+    )
 
     @app.route('/workers/start', methods=['POST'])
     def start():
@@ -262,11 +288,30 @@ def create_app():
         )
         return (jsonify(result), 200) if success else (jsonify({'error': result}), 400)
 
-    manager.recover_workers()  # restart any crashed workers on boot
     return app
 ```
 
 See [`example_app/app.py`](https://github.com/Vanni-broUser/crazy-workers/blob/main/example_app/app.py) for a complete example.
+
+## Backend integration
+
+When crazy_workers runs inside a backend, three options let it cooperate with
+the project instead of living off to the side:
+
+- **Co-locate its tables in your database.** Pass an existing SQLAlchemy
+  `engine` (or a `db_url`) to `WorkerManager`. crazy_workers creates its own
+  `workers` table inside your database and inherits its persistence and backups
+  — so state survives even if the process/container is recreated. A shared
+  engine is never disposed by crazy_workers; its owner manages it.
+- **Give workers the connection they need.** A worker is a separate process, so
+  it can't receive a live DB connection — pass the *configuration* instead.
+  `worker_env={'DATABASE_URL': ...}` is injected into every spawned worker
+  (overridable per call via `start_worker(..., env=...)`); the worker opens its
+  own connection from it.
+- **Recovery on construction.** `auto_recover=True` (default) restores
+  dead-but-`RUNNING` workers when the manager is built, so a restarting backend
+  brings its workers back with no explicit call. The CLI and boot entrypoint
+  set it to `False` (management/one-shot, not supervision).
 
 ## Gunicorn / Multi-Process Servers
 
@@ -274,6 +319,38 @@ When using a pre-fork server like Gunicorn:
 
 - **Recovery is atomic** — a file lock (`.service/workers.db.recovery.lock`) ensures `recover_workers()` runs once even when multiple workers boot simultaneously.
 - **Workers outlive their parent** — if a Gunicorn worker is recycled, background processes keep running. The next recovery cycle re-attaches or restarts them.
+
+## Automatic boot-restore
+
+Starting a worker transparently installs a **per-user OS hook** for its workers
+directory, so workers come back after a reboot without any host application
+running. The hook calls the internal entrypoint `python -m crazy_workers.boot
+--workers-dir <dir>`, which runs `recover_workers()`. The install is
+best-effort and happens at most once per directory (a marker lives in
+`.service/boot.json`); a failure never blocks the worker from starting and is
+reported by `crazy-workers status`.
+
+| Platform | Mechanism | When it runs |
+|----------|-----------|--------------|
+| Linux | systemd **user** unit (`~/.config/systemd/user`) | at user login — or at true boot if **lingering** is enabled |
+| Windows | logon Scheduled Task (`schtasks /SC ONLOGON`) | at user logon |
+
+**Unattended boot — the honest caveat.** The recovery itself is durable across
+consecutive reboots (a worker left `RUNNING` with a dead PID is restarted, and
+this is PID-reuse safe). But running it *without any login* depends on the OS:
+
+- **Linux:** enable lingering once, as root — `loginctl enable-linger <user>` —
+  so the user's systemd starts at boot (the same model as the Docker daemon
+  restarting containers). Without it, restore runs at the next login.
+- **Windows:** a user task fires at logon; true pre-logon start needs autologon
+  or an administrator-installed task.
+
+`crazy-workers status` always reports whether the hook runs **at boot** or
+**at login**, so this is never silently wrong.
+
+**Opting out.** Set `CRAZY_WORKERS_NO_BOOT` (any non-empty value) to disable the
+automatic install entirely — useful in containers, CI, or when you manage boot
+yourself. You can also pass `WorkerManager(..., auto_boot=False)`.
 
 ## Logs
 

@@ -2,6 +2,8 @@ build_check:
   stage: test
   image: python:3.11
   interruptible: true
+  tags:
+    - test
   rules:
     - if: '$CI_COMMIT_TAG'
       when: never

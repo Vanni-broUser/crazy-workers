@@ -1,8 +1,7 @@
-from .lister import list_workers
 from .params import show_params
-from .restorer import restore_workers
 from .starter import start_worker
+from .status import show_status
 from .stopper import stop_worker
 
 
-__all__ = ['list_workers', 'show_params', 'start_worker', 'stop_worker', 'restore_workers']
+__all__ = ['show_params', 'show_status', 'start_worker', 'stop_worker']

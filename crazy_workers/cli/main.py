@@ -3,7 +3,7 @@ import sys
 from rich.panel import Panel
 
 from ..core.manager import WorkerManager
-from .commands import list_workers, restore_workers, show_params, start_worker, stop_worker
+from .commands import show_params, show_status, start_worker, stop_worker
 from .discovery import resolve_workers_dir
 from .ui import console, err_console
 
@@ -18,8 +18,8 @@ def main():
 
   subparsers = parser.add_subparsers(dest='command', help='Commands')
 
-  # List command
-  subparsers.add_parser('list', help='List all workers and their status')
+  # Status command
+  subparsers.add_parser('status', help='Show workers and boot-restore status')
 
   # Start command
   start_parser = subparsers.add_parser('start', help='Start a worker (interactive if type missing)')
@@ -35,9 +35,6 @@ def main():
   params_parser = subparsers.add_parser('params', help='Show parameters for a worker')
   params_parser.add_argument('worker_key', nargs='?', help='The key of the worker')
 
-  # Restore command
-  subparsers.add_parser('restore', help='Restore workers that should be running')
-
   args = parser.parse_args()
 
   if not args.command:
@@ -52,9 +49,9 @@ def main():
 
   workers_dir = resolve_workers_dir(args.workers_dir)
   try:
-    with WorkerManager(workers_dir, create_dir=False) as manager:
-      if args.command == 'list':
-        list_workers(manager)
+    with WorkerManager(workers_dir, create_dir=False, auto_recover=False) as manager:
+      if args.command == 'status':
+        show_status(manager)
       elif args.command == 'start':
         import json
 
@@ -74,8 +71,6 @@ def main():
       elif args.command == 'params':
         if not show_params(manager, args.worker_key):
           sys.exit(1)
-      elif args.command == 'restore':
-        restore_workers(manager)
   except ValueError as e:
     err_console().print(f'[bold red]Error:[/bold red] {e}')
     sys.exit(1)

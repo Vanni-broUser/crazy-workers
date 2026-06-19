@@ -4,6 +4,7 @@ import re
 from sqlalchemy import func
 from sqlalchemy.exc import IntegrityError
 
+from ...boot import ensure_boot_restore
 from ...database.schema import Worker, WorkerStatus
 
 
@@ -108,12 +109,16 @@ def _get_worker_script_path(manager, worker_type):
 def _spawn_worker_process(manager, worker, worker_path, parameters, env, session):
   log_file_path = os.path.join(manager.logs_dir, f'{worker.worker_key}.log')
 
+  # The manager's worker_env is the baseline for every worker (e.g. the host
+  # backend's DATABASE_URL); a per-call env overrides it.
+  spawn_env = {**manager.worker_env, **(env or {})}
+
   handle = manager.backend.spawn(
     worker_key=worker.worker_key,
     worker_type=worker.worker_type,
     worker_path=worker_path,
     parameters=parameters,
-    env=env,
+    env=spawn_env,
     log_path=log_file_path,
   )
 
@@ -129,4 +134,12 @@ def _spawn_worker_process(manager, worker, worker_path, parameters, env, session
   session.commit()
 
   manager._active_processes[worker.worker_key] = handle
+  _ensure_boot_restore(manager)
   return True, worker.to_dict()
+
+
+def _ensure_boot_restore(manager):
+  # Best-effort and never raising: a freshly started worker transparently
+  # registers the OS boot-restore hook so it survives a reboot.
+  if getattr(manager, 'auto_boot', False):
+    ensure_boot_restore(manager.service_dir, manager.workers_dir, provider=manager._boot_provider)

@@ -16,10 +16,10 @@ class TestCliMain(BaseTestCase):
     self.env_patcher.stop()
     super().tearDown()
 
-  def test_cli_list(self):
+  def test_cli_status(self):
     self.manager.start_worker('example_worker', worker_key='cli_test')
 
-    argv = ['crazy-workers', '--workers-dir', self.workers_path, 'list']
+    argv = ['crazy-workers', '--workers-dir', self.workers_path, 'status']
     with patch('sys.argv', argv):
       with patch('sys.stdout', new=StringIO()) as fake_out:
         cli_main()
@@ -30,7 +30,7 @@ class TestCliMain(BaseTestCase):
   def test_cli_env_discovery(self):
     self.manager.start_worker('example_worker', worker_key='env_test')
 
-    with patch('sys.argv', ['crazy-workers', 'list']):
+    with patch('sys.argv', ['crazy-workers', 'status']):
       with patch.dict(os.environ, {'CRAZY_WORKERS_DIR': self.workers_path}):
         with patch('sys.stdout', new=StringIO()) as fake_out:
           cli_main()
@@ -38,7 +38,7 @@ class TestCliMain(BaseTestCase):
           self.assertIn('env_test', output)
 
   def test_cli_flag_override(self):
-    argv = ['crazy-workers', '--workers-dir', self.workers_path, 'list']
+    argv = ['crazy-workers', '--workers-dir', self.workers_path, 'status']
     with patch('sys.argv', argv):
       with patch.dict(os.environ, {'CRAZY_WORKERS_DIR': '/non/existent/path/env'}):
         with patch('sys.stdout', new=StringIO()) as fake_out:
@@ -47,7 +47,7 @@ class TestCliMain(BaseTestCase):
           self.assertIn('NEVER_STARTED', output)
 
   def test_cli_error_missing_dir(self):
-    argv = ['crazy-workers', '--workers-dir', '/non/existent/path/flag', 'list']
+    argv = ['crazy-workers', '--workers-dir', '/non/existent/path/flag', 'status']
     with patch('sys.argv', argv):
       with patch('sys.stderr', new=StringIO()) as fake_err:
         with self.assertRaises(SystemExit) as cm:

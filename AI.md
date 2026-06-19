@@ -31,24 +31,33 @@ tests/
       test_recoverer.py     # crazy_workers/core/manager/recoverer.py
       test_starter.py       # crazy_workers/core/manager/starter.py
       test_stopper.py       # crazy_workers/core/manager/stopper.py
+      test_boot_wiring.py   # start_worker -> automatic boot-restore wiring
+      test_db_integration.py # shared engine, worker_env injection, recover-on-init
+  boot/                     # crazy_workers/boot/ (automatic boot-restore)
+    test_base.py            # crazy_workers/boot/base.py
+    test_systemd.py         # crazy_workers/boot/systemd.py
+    test_windows.py         # crazy_workers/boot/windows.py
+    test_detect.py          # crazy_workers/boot/detect.py
+    test_orchestrator.py    # crazy_workers/boot/orchestrator.py
+    test_entry.py           # crazy_workers/boot/entry.py
   cli/
     test_main.py            # crazy_workers/cli/main.py
     test_discovery.py       # crazy_workers/cli/discovery.py
     commands/
-      test_lister.py        # crazy_workers/cli/commands/lister.py
+      test_status.py        # crazy_workers/cli/commands/status.py
       test_starter.py       # crazy_workers/cli/commands/starter.py
       test_stopper.py       # crazy_workers/cli/commands/stopper.py
       test_params.py        # crazy_workers/cli/commands/params.py
-      test_restore.py       # crazy_workers/cli/commands/restorer.py
   database/
     test_storage.py         # crazy_workers/database/storage.py
   integration/              # Full-stack tests with real processes
     test_resilience.py      # Kill/recovery/log/path-traversal scenarios
     test_nested_workers.py  # Parent-child worker scenarios
   app/                      # Tests for example_app/
-    test_app.py             # example_app/app.py (requires flask)
+    test_app.py             # example_app/app.py — routes, /events, end-to-end shared-DB demo
     workers/
       test_workers.py       # Smoke tests for each example worker
+      test_db_writer.py     # example_app/workers/db_writer.py (uses injected DATABASE_URL)
 ```
 
 ## Commands
