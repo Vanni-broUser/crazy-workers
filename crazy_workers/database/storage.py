@@ -10,11 +10,36 @@ logger = logging.getLogger('crazy_workers')
 
 
 class Storage:
-  def __init__(self, db_path):
-    # sqlite:///path/to/db
-    self.db_path = db_path
-    self.engine = create_engine(f'sqlite:///{db_path}', connect_args={'timeout': 30})
+  """Persistence for worker state.
 
+  Three ways to point it at a database, in priority order:
+
+  - ``engine``: reuse an existing SQLAlchemy engine (e.g. the host backend's),
+    so crazy_workers' tables are created **inside the project's own database**.
+    A shared engine is NOT disposed by crazy_workers — its owner manages it.
+  - ``db_url``: any SQLAlchemy URL (e.g. ``postgresql://user:pass@host/db``).
+  - ``db_path``: a SQLite file path — the default, self-contained mode.
+  """
+
+  def __init__(self, db_path=None, *, db_url=None, engine=None):
+    self.db_path = db_path
+
+    if engine is not None:
+      self.engine = engine
+      self._owns_engine = False
+    else:
+      url = db_url if db_url else f'sqlite:///{db_path}'
+      connect_args = {'timeout': 30} if url.startswith('sqlite') else {}
+      self.engine = create_engine(url, connect_args=connect_args)
+      self._owns_engine = True
+
+    if self.engine.dialect.name == 'sqlite':
+      self._install_sqlite_tuning()
+
+    self.Session = sessionmaker(bind=self.engine)
+    self._ensure_tables()
+
+  def _install_sqlite_tuning(self):
     @event.listens_for(self.engine, 'connect')
     def set_sqlite_pragma(dbapi_connection, connection_record):
       cursor = dbapi_connection.cursor()
@@ -25,15 +50,8 @@ class Storage:
     def do_begin(conn):
       conn.exec_driver_sql('BEGIN IMMEDIATE')
 
-    self.Session = sessionmaker(bind=self.engine)
-    self._ensure_tables()
-
   def _ensure_tables(self):
-    """Initializes the database schema."""
-    self._create_tables()
-
-  def _create_tables(self):
-    logger.info(f'Creating tables for database at {self.db_path}')
+    """Create crazy_workers' own tables if missing (leaves other tables alone)."""
     Base.metadata.create_all(self.engine)
 
   def get_session(self):
@@ -53,4 +71,6 @@ class Storage:
       session.close()
 
   def dispose(self):
-    self.engine.dispose()
+    # A shared engine belongs to its owner; only dispose one we created.
+    if self._owns_engine:
+      self.engine.dispose()

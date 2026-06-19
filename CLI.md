@@ -27,13 +27,16 @@ If none of the above resolves to a valid directory, the CLI exits with an error.
 
 ## Commands
 
-### `list`
+### `status`
 
-Shows all workers tracked in the database, including their status, PID, last action timestamp, and parameters.
+The observability hub. Shows the boot-restore state for the workers directory
+(enabled/not installed, the mechanism, and whether it runs at boot or at login),
+followed by a table of all workers tracked in the database — status, PID, last
+action timestamp, and parameters.
 
 ```bash
-crazy-workers list
-crazy-workers --workers-dir /path/to/workers list
+crazy-workers status
+crazy-workers --workers-dir /path/to/workers status
 ```
 
 Status colors: `green` = RUNNING, `cyan` = NEVER_STARTED, `yellow` = STARTING, `dim` = STOPPED, `bold red` = CRASHED.
@@ -96,15 +99,11 @@ crazy-workers params
 
 ---
 
-### `restore`
-
-Scans the database for workers whose status is `RUNNING` but whose process is dead, and restarts them. Uses a file lock to prevent concurrent recovery.
-
-```bash
-crazy-workers restore
-```
-
-Typically called on application startup. In code, the equivalent is `manager.recover_workers()`.
+> **No `restore` command.** Recovery after a machine reboot is automatic: using
+> crazy-workers to start a worker installs a per-user OS boot hook that runs it
+> for you (see [Automatic boot-restore](README.md#automatic-boot-restore)). In
+> code, `manager.recover_workers()` is still available for in-app crash
+> recovery.
 
 ---
 
@@ -127,13 +126,13 @@ The CLI reads this file at every invocation. You can also set it manually.
 ```bash
 # Linux / macOS
 export CRAZY_WORKERS_DIR=/path/to/workers
-crazy-workers list
+crazy-workers status
 
 # Windows (PowerShell)
 $env:CRAZY_WORKERS_DIR = "C:\path\to\workers"
-crazy-workers list
+crazy-workers status
 
 # Persist to .env (any platform)
 echo "CRAZY_WORKERS_DIR=/path/to/workers" > .env
-crazy-workers list
+crazy-workers status
 ```

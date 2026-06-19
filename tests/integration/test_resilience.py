@@ -37,7 +37,8 @@ class TestResilience(BaseTestCase):
     self.assertFalse(psutil.pid_exists(pid))
 
     self.manager.dispose()
-    fresh = WorkerManager(self.workers_path)
+    # auto_recover=False so the explicit recover_workers() below is what restores.
+    fresh = WorkerManager(self.workers_path, auto_recover=False)
     restarted = fresh.recover_workers()
     self.assertIn('resilience_test', restarted)
 

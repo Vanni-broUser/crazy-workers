@@ -14,7 +14,18 @@ logger = logging.getLogger('crazy_workers')
 
 
 class WorkerManager:
-  def __init__(self, workers_dir='workers', create_dir=True, backend=None):
+  def __init__(
+    self,
+    workers_dir='workers',
+    create_dir=True,
+    backend=None,
+    auto_boot=True,
+    boot_provider=None,
+    db_url=None,
+    engine=None,
+    worker_env=None,
+    auto_recover=True,
+  ):
     self.workers_dir = workers_dir
     self._validate_workers_dir(create_dir)
 
@@ -22,11 +33,26 @@ class WorkerManager:
     self.logs_dir = os.path.join(self.service_dir, 'logs')
     self.db_path = os.path.join(self.service_dir, 'workers.db')
 
-    self._initialize_storage(create_dir)
+    self._initialize_storage(create_dir, db_url, engine)
     # The backend is the only component that touches OS processes. The default
     # spawns real subprocesses; tests can swap in a fake one (see for_testing).
     self.backend = backend or SubprocessBackend()
+    # When True, starting a worker transparently installs the per-user OS
+    # boot-restore hook (see crazy_workers.boot). boot_provider is an injection
+    # seam for tests; None lets the platform default be auto-detected.
+    self.auto_boot = auto_boot
+    self._boot_provider = boot_provider
+    # Environment variables injected into every spawned worker — e.g. the host
+    # backend's DATABASE_URL, so a worker can open its own connection to it.
+    self.worker_env = worker_env or {}
+    self.auto_recover = auto_recover
     self._active_processes = {}  # worker_key -> WorkerHandle
+
+    # Recovery on construction: when a host backend (re)starts and builds its
+    # manager, any worker left RUNNING with a dead PID is restored — no explicit
+    # call needed. The CLI and the boot entrypoint disable this.
+    if self.auto_recover:
+      self.recover_workers()
 
   @classmethod
   def for_testing(cls, workers_dir='workers', mode='fake', create_dir=True):
@@ -42,7 +68,7 @@ class WorkerManager:
     from ...testing import make_test_backend
 
     backend = make_test_backend(mode)
-    manager = cls(workers_dir, create_dir=create_dir, backend=backend)
+    manager = cls(workers_dir, create_dir=create_dir, backend=backend, auto_boot=False, auto_recover=False)
     manager.test = backend
     return manager
 
@@ -60,18 +86,21 @@ class WorkerManager:
       else:
         raise ValueError(f'Workers directory "{self.workers_dir}" does not exist.')
 
-  def _initialize_storage(self, create_dir):
+  def _initialize_storage(self, create_dir, db_url, engine):
     """Sets up service directories and storage if allowed or if they already exist."""
     if create_dir:
       os.makedirs(self.service_dir, exist_ok=True)
       os.makedirs(self.logs_dir, exist_ok=True)
+
+    if engine is not None or db_url is not None:
+      # External/shared database (e.g. the host backend's). crazy_workers' tables
+      # are created there; the local .service dir is still used for logs, the
+      # recovery lock and the boot marker.
+      self.storage = Storage(db_url=db_url, engine=engine)
+    elif create_dir or os.path.exists(self.db_path):
       self.storage = Storage(self.db_path)
     else:
-      # If not allowed to create, only initialize storage if the DB already exists
-      if os.path.exists(self.db_path):
-        self.storage = Storage(self.db_path)
-      else:
-        self.storage = None
+      self.storage = None
 
   def start_worker(self, worker_type, worker_key=None, parameters=None, env=None):
     return start_worker(self, worker_type, worker_key, parameters, env)

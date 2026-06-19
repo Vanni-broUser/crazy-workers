@@ -104,7 +104,7 @@ class TestDiscovery(BaseTestCase):
 
     with patch('crazy_workers.cli.discovery.os.path.isdir', side_effect=mocked_isdir):
       with patch('crazy_workers.cli.discovery.os.path.abspath', side_effect=mocked_abspath):
-        with patch('sys.argv', ['crazy-workers', 'list']):
+        with patch('sys.argv', ['crazy-workers', 'status']):
           with patch('sys.stdin.isatty', return_value=False):
             with patch('sys.stdout', new=StringIO()) as fake_out:
               cli_main()
@@ -132,7 +132,7 @@ class TestDiscovery(BaseTestCase):
                 os.environ[k] = v
 
       with patch('crazy_workers.cli.discovery.load_env', side_effect=mock_load_env):
-        with patch('sys.argv', ['crazy-workers', 'list']):
+        with patch('sys.argv', ['crazy-workers', 'status']):
           with patch('sys.stdout', new=StringIO()) as fake_out:
             cli_main()
             output = fake_out.getvalue()
