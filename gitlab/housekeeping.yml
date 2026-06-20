@@ -1,5 +1,5 @@
 lint_backend:
-  stage: lint
+  stage: housekeeping
   image: python:3.11
   allow_failure: true
   interruptible: true
