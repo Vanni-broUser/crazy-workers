@@ -104,8 +104,9 @@ See [CLI.md](https://github.com/Vanni-broUser/crazy-workers/blob/main/CLI.md) fo
 | `engine` | `Engine` | `None` | Reuse an existing SQLAlchemy engine so the tables live in your database; **not** disposed by crazy_workers |
 | `worker_env` | `dict` | `None` | Environment variables injected into **every** spawned worker (e.g. `DATABASE_URL`) |
 | `auto_recover` | `bool` | `True` | Recover dead-but-`RUNNING` workers when the manager is constructed |
+| `create_tables` | `bool` | `True` | Create crazy_workers' own tables on init; set `False` when the host owns the schema via its migrations |
 
-See [Backend integration](#backend-integration) for `db_url` / `engine` / `worker_env` / `auto_recover`.
+See [Backend integration](#backend-integration) for `db_url` / `engine` / `worker_env` / `auto_recover` / `create_tables`.
 
 ### `start_worker(worker_type, worker_key=None, parameters=None, env=None)`
 
@@ -303,6 +304,15 @@ the project instead of living off to the side:
   `workers` table inside your database and inherits its persistence and backups
   — so state survives even if the process/container is recreated. A shared
   engine is never disposed by crazy_workers; its owner manages it.
+- **Let your migrations own the schema.** If your project tracks its schema with
+  a migration tool (Alembic, etc.), pass `create_tables=False` so crazy_workers
+  issues no DDL: the `workers` table becomes a normal migration in your history,
+  with a single source of truth and no create-on-import side effect. You own the
+  ordering — the table must exist before the manager queries it, so build the
+  manager *after* your migrations run (and keep `auto_recover=False` until then,
+  since recovery reads that table). See the `workers` schema in
+  [`crazy_workers/database/schema.py`](https://github.com/Vanni-broUser/crazy-workers/blob/main/crazy_workers/database/schema.py)
+  for the columns your migration must create.
 - **Give workers the connection they need.** A worker is a separate process, so
   it can't receive a live DB connection — pass the *configuration* instead.
   `worker_env={'DATABASE_URL': ...}` is injected into every spawned worker
