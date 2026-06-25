@@ -19,9 +19,15 @@ class Storage:
     A shared engine is NOT disposed by crazy_workers — its owner manages it.
   - ``db_url``: any SQLAlchemy URL (e.g. ``postgresql://user:pass@host/db``).
   - ``db_path``: a SQLite file path — the default, self-contained mode.
+
+  ``create_tables`` controls whether crazy_workers creates its own tables on
+  init. Leave it ``True`` for the self-contained modes. Set it ``False`` when
+  the host owns the schema (e.g. it manages crazy_workers' ``workers`` table
+  through its own migrations): crazy_workers then issues no DDL, and the caller
+  is responsible for the table existing before the storage is used.
   """
 
-  def __init__(self, db_path=None, *, db_url=None, engine=None):
+  def __init__(self, db_path=None, *, db_url=None, engine=None, create_tables=True):
     self.db_path = db_path
 
     if engine is not None:
@@ -37,7 +43,8 @@ class Storage:
       self._install_sqlite_tuning()
 
     self.Session = sessionmaker(bind=self.engine)
-    self._ensure_tables()
+    if create_tables:
+      self._ensure_tables()
 
   def _install_sqlite_tuning(self):
     @event.listens_for(self.engine, 'connect')

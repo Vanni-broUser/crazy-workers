@@ -25,6 +25,7 @@ class WorkerManager:
     engine=None,
     worker_env=None,
     auto_recover=True,
+    create_tables=True,
   ):
     self.workers_dir = workers_dir
     self._validate_workers_dir(create_dir)
@@ -33,7 +34,7 @@ class WorkerManager:
     self.logs_dir = os.path.join(self.service_dir, 'logs')
     self.db_path = os.path.join(self.service_dir, 'workers.db')
 
-    self._initialize_storage(create_dir, db_url, engine)
+    self._initialize_storage(create_dir, db_url, engine, create_tables)
     # The backend is the only component that touches OS processes. The default
     # spawns real subprocesses; tests can swap in a fake one (see for_testing).
     self.backend = backend or SubprocessBackend()
@@ -86,7 +87,7 @@ class WorkerManager:
       else:
         raise ValueError(f'Workers directory "{self.workers_dir}" does not exist.')
 
-  def _initialize_storage(self, create_dir, db_url, engine):
+  def _initialize_storage(self, create_dir, db_url, engine, create_tables):
     """Sets up service directories and storage if allowed or if they already exist."""
     if create_dir:
       os.makedirs(self.service_dir, exist_ok=True)
@@ -94,11 +95,12 @@ class WorkerManager:
 
     if engine is not None or db_url is not None:
       # External/shared database (e.g. the host backend's). crazy_workers' tables
-      # are created there; the local .service dir is still used for logs, the
-      # recovery lock and the boot marker.
-      self.storage = Storage(db_url=db_url, engine=engine)
+      # are created there unless the host owns the schema (create_tables=False);
+      # the local .service dir is still used for logs, the recovery lock and the
+      # boot marker.
+      self.storage = Storage(db_url=db_url, engine=engine, create_tables=create_tables)
     elif create_dir or os.path.exists(self.db_path):
-      self.storage = Storage(self.db_path)
+      self.storage = Storage(self.db_path, create_tables=create_tables)
     else:
       self.storage = None
 

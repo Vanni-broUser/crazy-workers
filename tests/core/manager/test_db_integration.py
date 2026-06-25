@@ -80,3 +80,16 @@ class TestSharedEnginePassthrough(DbIntegrationBase):
     with engine.connect() as conn:
       self.assertEqual(conn.execute(text('SELECT 1')).scalar(), 1)
     engine.dispose()
+
+  def test_create_tables_false_lets_host_own_the_schema(self):
+    # The host manages crazy_workers' table through its own migrations, so the
+    # manager must not create it. auto_recover stays off: there is no table to
+    # reconcile against until the host's migration has run.
+    engine = create_engine(f'sqlite:///{os.path.join(self.tmp, "host_migrated.db")}')
+    mgr = WorkerManager(
+      self.wdir, engine=engine, backend=FakeBackend(), auto_boot=False, auto_recover=False, create_tables=False
+    )
+    self.assertNotIn('workers', inspect(engine).get_table_names())
+
+    mgr.dispose()
+    engine.dispose()

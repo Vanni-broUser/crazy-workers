@@ -2,7 +2,7 @@ import os
 import shutil
 import tempfile
 import unittest
-from sqlalchemy import create_engine, text
+from sqlalchemy import create_engine, inspect, text
 
 from crazy_workers.database.schema import Worker, WorkerStatus
 from crazy_workers.database.storage import Storage
@@ -80,4 +80,15 @@ class TestStorageBackends(unittest.TestCase):
     with engine.connect() as conn:
       count = conn.execute(text('SELECT COUNT(*) FROM workers')).scalar()
     self.assertEqual(count, 1)
+    engine.dispose()
+
+  def test_create_tables_false_issues_no_ddl(self):
+    # When the host owns the schema (e.g. via migrations), crazy_workers must
+    # not create its tables — it leaves the engine's database untouched.
+    engine = create_engine(f'sqlite:///{os.path.join(self.tmp, "host_owned.db")}')
+    storage = Storage(engine=engine, create_tables=False)
+
+    self.assertNotIn('workers', inspect(engine).get_table_names())
+
+    storage.dispose()
     engine.dispose()
