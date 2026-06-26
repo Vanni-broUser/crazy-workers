@@ -1,6 +1,7 @@
 import json
 import os
 import re
+import sys
 from datetime import datetime
 from rich.panel import Panel
 from rich.table import Table
@@ -8,11 +9,15 @@ from rich.table import Table
 from ..ui import console
 
 
-def show_status(client, workers_dir):
+def show_status(client, workers_dir, json_mode=False):
   """Observability hub: the target state store plus the worker table (desired vs actual)."""
-  console().print(_build_header(workers_dir))
-
   workers = _merge_with_filesystem(client.list(), workers_dir)
+
+  if json_mode:
+    sys.stdout.write(json.dumps({'workers': workers}) + '\n')
+    return workers
+
+  console().print(_build_header(workers_dir))
   if not workers:
     console().print('[yellow]No workers found.[/yellow]')
     return workers
@@ -27,7 +32,8 @@ def _build_header(workers_dir):
     target = f'[green]shared DB[/green] [dim]({_redact(db_url)})[/dim]'
   else:
     target = '[dim]self-contained SQLite (.service/workers.db)[/dim]'
-  body = f'[bold]Workers dir:[/bold] {workers_dir}\n[bold]State store:[/bold] {target}'
+  dir_label = workers_dir if workers_dir else '[dim](not set — scripts not listed)[/dim]'
+  body = f'[bold]Workers dir:[/bold] {dir_label}\n[bold]State store:[/bold] {target}'
   return Panel.fit(body, border_style='cyan', title='[bold cyan]Crazy Workers status[/bold cyan]')
 
 
@@ -39,6 +45,9 @@ def _redact(db_url):
 def _merge_with_filesystem(db_workers, workers_dir):
   """Append NEVER_STARTED rows for worker scripts that have no DB record yet."""
   results = list(db_workers)
+  if not workers_dir:
+    # No dir resolved (shared-DB mode without CRAZY_WORKERS_DIR): nothing to scan.
+    return results
   registered_types = {w['worker_type'] for w in results}
   try:
     available = sorted({f[:-3] for f in os.listdir(workers_dir) if f.endswith('.py') and f != '__init__.py'})

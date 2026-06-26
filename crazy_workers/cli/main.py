@@ -39,7 +39,8 @@ def _build_parser():
 
   subparsers = parser.add_subparsers(dest='command', help='Commands')
 
-  subparsers.add_parser('status', help='Show workers (desired vs actual) and the target DB')
+  status_parser = subparsers.add_parser('status', help='Show workers (desired vs actual) and the target DB')
+  status_parser.add_argument('--json', action='store_true', help='Output workers as JSON to stdout')
 
   start_parser = subparsers.add_parser('start', help='Request a worker to run (interactive if type missing)')
   start_parser.add_argument('worker_type', nargs='?', help='The type (filename) of worker to start')
@@ -72,7 +73,11 @@ def main():
     parser.print_help()
     sys.exit(1)
 
-  workers_dir = resolve_workers_dir(args.workers_dir)
+  # Only `start` (lists/validates the worker scripts) and the daemon (owns them)
+  # truly need the workers dir. With a shared DB, status/stop/params work without
+  # it, so we must not block on the interactive prompt (see CRAZY_WORKERS_DB_URL).
+  needs_dir = args.command in ('start', 'daemon') or _db_url() is None
+  workers_dir = resolve_workers_dir(args.workers_dir, required=needs_dir)
 
   # The daemon is the process owner, not a client — it builds its own manager.
   if args.command == 'daemon':
@@ -87,7 +92,7 @@ def main():
   try:
     with _build_client(workers_dir) as client:
       if args.command == 'status':
-        show_status(client, workers_dir)
+        show_status(client, workers_dir, json_mode=getattr(args, 'json', False))
       elif args.command == 'start':
         params = _parse_params(args.params)
         if not start_worker(client, workers_dir, args.worker_type, worker_key=args.key, parameters=params):

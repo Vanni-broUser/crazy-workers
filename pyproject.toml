@@ -1,6 +1,6 @@
 [project]
 name = "crazy-workers"
-version = "1.4.0"
+version = "1.4.2"
 description = "A Python library for managing background worker processes with persistent state, automatic recovery, and a CLI."
 readme = "README.md"
 authors = [{ name = "GioVanni Colasanto" }]

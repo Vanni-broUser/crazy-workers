@@ -1,3 +1,4 @@
+import json
 import os
 from io import StringIO
 from rich.console import Console
@@ -107,6 +108,64 @@ class TestCliStatus(BaseTestCase):
           args = mock_add_row.call_args[0]
           self.assertIn('Started', args[6])
           self.assertTrue(args[7].endswith('...'))
+
+
+class TestCliStatusJson(BaseTestCase):
+  def _client(self, workers):
+    client = MagicMock()
+    client.list.return_value = workers
+    return client
+
+  def test_json_mode_outputs_valid_json(self):
+    workers = [
+      {
+        'worker_key': 'w1',
+        'worker_type': 'example_worker',
+        'desired_status': 'RUNNING',
+        'status': 'RUNNING',
+        'pid': 42,
+        'parameters': {'vault_path': '/opt/brains/x'},
+        'last_started_at': '2024-01-01T12:00:00',
+        'last_stopped_at': None,
+      }
+    ]
+    with patch('os.listdir', return_value=[]):
+      with patch('sys.stdout', new=StringIO()) as fake_out:
+        show_status(self._client(workers), self.workers_path, json_mode=True)
+        data = json.loads(fake_out.getvalue())
+    self.assertIn('workers', data)
+    self.assertEqual(len(data['workers']), 1)
+    self.assertEqual(data['workers'][0]['worker_key'], 'w1')
+    self.assertEqual(data['workers'][0]['desired_status'], 'RUNNING')
+    self.assertEqual(data['workers'][0]['status'], 'RUNNING')
+
+  def test_json_mode_empty_returns_empty_list(self):
+    with patch('os.listdir', return_value=[]):
+      with patch('sys.stdout', new=StringIO()) as fake_out:
+        show_status(self._client([]), self.workers_path, json_mode=True)
+        data = json.loads(fake_out.getvalue())
+    self.assertEqual(data, {'workers': []})
+
+  def test_json_mode_suppresses_rich_output(self):
+    workers = [
+      {
+        'worker_key': 'w1',
+        'worker_type': 'example_worker',
+        'desired_status': 'RUNNING',
+        'status': 'RUNNING',
+        'pid': 1,
+        'parameters': {},
+        'last_started_at': None,
+        'last_stopped_at': None,
+      }
+    ]
+    with patch('os.listdir', return_value=[]):
+      with patch('sys.stdout', new=StringIO()) as fake_out:
+        show_status(self._client(workers), self.workers_path, json_mode=True)
+        output = fake_out.getvalue()
+    # must be valid JSON and contain nothing else
+    data = json.loads(output.strip())
+    self.assertIn('workers', data)
 
 
 class TestStatusHeader(BaseTestCase):
