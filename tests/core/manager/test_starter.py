@@ -178,3 +178,37 @@ class TestManagerStarter(BaseTestCase):
     result = _prepare_worker_record(None, 'example_worker', 'ie_key', {}, mock_session)
     self.assertIsNone(result)
     mock_session.rollback.assert_called_once()
+
+  @patch('crazy_workers.core.backend.subprocess.Popen')
+  def test_immediate_failure_records_crash_backoff(self, mock_popen):
+    mock_proc = mock_popen.return_value
+    mock_proc.returncode = 1
+    mock_proc.pid = 9999  # wait() returns without raising → treated as died immediately
+
+    bad_worker = os.path.join(self.workers_path, 'failbk.py')
+    with open(bad_worker, 'w') as f:
+      f.write('pass')
+
+    success, _ = self.manager.start_worker('failbk', worker_key='bk')
+    self.assertFalse(success)
+
+    from crazy_workers.database.schema import Worker
+
+    with self.manager.storage.session_scope() as session:
+      worker = session.query(Worker).filter_by(worker_key='bk').first()
+      self.assertEqual(worker.status.value, 'CRASHED')
+      self.assertEqual(worker.restart_count, 1)
+      self.assertIsNotNone(worker.last_exit_at)
+
+  def test_restart_count_resets_on_successful_start(self):
+    from crazy_workers.database.schema import Worker
+
+    self.manager.start_worker('example_worker', worker_key='rk')
+    with self.manager.storage.session_scope() as session:
+      session.query(Worker).filter_by(worker_key='rk').first().restart_count = 5
+    self.manager.stop_worker('rk')
+
+    self.manager.start_worker('example_worker', worker_key='rk')
+    with self.manager.storage.session_scope() as session:
+      self.assertEqual(session.query(Worker).filter_by(worker_key='rk').first().restart_count, 0)
+    self.manager.stop_worker('rk')

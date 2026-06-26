@@ -19,7 +19,7 @@ class WorkerManager:
     workers_dir='workers',
     create_dir=True,
     backend=None,
-    auto_boot=True,
+    auto_boot=False,
     boot_provider=None,
     db_url=None,
     engine=None,
@@ -38,9 +38,12 @@ class WorkerManager:
     # The backend is the only component that touches OS processes. The default
     # spawns real subprocesses; tests can swap in a fake one (see for_testing).
     self.backend = backend or SubprocessBackend()
-    # When True, starting a worker transparently installs the per-user OS
-    # boot-restore hook (see crazy_workers.boot). boot_provider is an injection
-    # seam for tests; None lets the platform default be auto-detected.
+    # Opt-in legacy behaviour: when True, starting a worker transparently
+    # installs the per-user OS boot-restore hook (see crazy_workers.boot). The
+    # default is now False — in the reconciler model, surviving a reboot is the
+    # deployment's job (a systemd unit / container that runs the daemon), not a
+    # per-worker hook. boot_provider is an injection seam for tests; None lets
+    # the platform default be auto-detected.
     self.auto_boot = auto_boot
     self._boot_provider = boot_provider
     # Environment variables injected into every spawned worker — e.g. the host
