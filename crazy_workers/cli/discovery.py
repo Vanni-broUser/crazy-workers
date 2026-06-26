@@ -72,11 +72,16 @@ def resolve_workers_dir(flag_dir):
     if user_input:
       if os.path.isdir(user_input):
         abs_path = os.path.abspath(user_input)
-        try:
-          save_to_env('CRAZY_WORKERS_DIR', abs_path)
-          console().print(f'[bold green]Saved CRAZY_WORKERS_DIR={abs_path} to .env[/bold green]')
-        except Exception as e:
-          err_console().print(f'[bold red]Failed to save configuration:[/bold red] {e}')
+        # When pointed at a shared DB the cwd is the consumer app's, not ours —
+        # don't rewrite its .env (see T2). The env var lives only for this run.
+        if os.environ.get('CRAZY_WORKERS_DB_URL'):
+          os.environ.setdefault('CRAZY_WORKERS_DIR', abs_path)
+        else:
+          try:
+            save_to_env('CRAZY_WORKERS_DIR', abs_path)
+            console().print(f'[bold green]Saved CRAZY_WORKERS_DIR={abs_path} to .env[/bold green]')
+          except Exception as e:
+            err_console().print(f'[bold red]Failed to save configuration:[/bold red] {e}')
         return abs_path
       else:
         err_console().print(f'[bold red]Error:[/bold red] "{user_input}" is not a valid directory.')

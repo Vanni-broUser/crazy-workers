@@ -1,4 +1,5 @@
 import os
+import shutil
 from io import StringIO
 from unittest.mock import patch
 
@@ -102,14 +103,19 @@ class TestDiscovery(BaseTestCase):
     db_path = os.path.join(self.workers_path, '.service', 'workers.db')
     Storage(db_path).dispose()
 
-    with patch('crazy_workers.cli.discovery.os.path.isdir', side_effect=mocked_isdir):
-      with patch('crazy_workers.cli.discovery.os.path.abspath', side_effect=mocked_abspath):
-        with patch('sys.argv', ['crazy-workers', 'status']):
-          with patch('sys.stdin.isatty', return_value=False):
-            with patch('sys.stdout', new=StringIO()) as fake_out:
-              cli_main()
-              output = fake_out.getvalue()
-              self.assertTrue('Active & Registered' in output or 'No workers' in output)
+    try:
+      with patch('crazy_workers.cli.discovery.os.path.isdir', side_effect=mocked_isdir):
+        with patch('crazy_workers.cli.discovery.os.path.abspath', side_effect=mocked_abspath):
+          with patch('sys.argv', ['crazy-workers', 'status']):
+            with patch('sys.stdin.isatty', return_value=False):
+              with patch('sys.stdout', new=StringIO()) as fake_out:
+                cli_main()
+                output = fake_out.getvalue()
+                self.assertIn('Crazy Workers status', output)
+    finally:
+      # The discovery fallback resolves to the relative 'workers' dir, so the
+      # self-contained client materialises ./workers/.service in the cwd.
+      shutil.rmtree('workers', ignore_errors=True)
 
   def test_env_file_discovery(self):
     env_path = os.path.abspath('.env_test')
@@ -136,7 +142,7 @@ class TestDiscovery(BaseTestCase):
           with patch('sys.stdout', new=StringIO()) as fake_out:
             cli_main()
             output = fake_out.getvalue()
-            self.assertTrue('Active & Registered' in output or 'No workers' in output)
+            self.assertIn('Crazy Workers status', output)
     finally:
       if os.path.exists(env_path):
         os.remove(env_path)

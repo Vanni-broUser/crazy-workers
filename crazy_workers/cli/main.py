@@ -1,15 +1,36 @@
 import argparse
+import json
+import os
 import sys
 from rich.panel import Panel
 
-from ..core.manager import WorkerManager
+from ..client import WorkerClient
 from .commands import show_params, show_status, start_worker, stop_worker
 from .discovery import resolve_workers_dir
 from .ui import console, err_console
 
 
-def main():
+def _db_url():
+  return os.environ.get('CRAZY_WORKERS_DB_URL')
 
+
+def _build_client(workers_dir):
+  """A control-plane client over the shared DB, or the local self-contained SQLite.
+
+  With CRAZY_WORKERS_DB_URL set the CLI talks to the same DB as the daemon and
+  issues no DDL (the daemon or host owns the schema). Otherwise it falls back to
+  the local ``.service/workers.db``, the self-contained mode.
+  """
+  db_url = _db_url()
+  if db_url:
+    return WorkerClient(db_url=db_url, create_tables=False)
+  service_dir = os.path.join(workers_dir, '.service')
+  os.makedirs(service_dir, exist_ok=True)
+  sqlite_path = os.path.join(service_dir, 'workers.db')
+  return WorkerClient(db_url=f'sqlite:///{sqlite_path}', create_tables=True)
+
+
+def _build_parser():
   def formatter(prog):
     return argparse.HelpFormatter(prog, max_help_position=32)
 
@@ -18,23 +39,27 @@ def main():
 
   subparsers = parser.add_subparsers(dest='command', help='Commands')
 
-  # Status command
-  subparsers.add_parser('status', help='Show workers and boot-restore status')
+  subparsers.add_parser('status', help='Show workers (desired vs actual) and the target DB')
 
-  # Start command
-  start_parser = subparsers.add_parser('start', help='Start a worker (interactive if type missing)')
+  start_parser = subparsers.add_parser('start', help='Request a worker to run (interactive if type missing)')
   start_parser.add_argument('worker_type', nargs='?', help='The type (filename) of worker to start')
   start_parser.add_argument('--key', help='Optional custom key for the worker')
   start_parser.add_argument('--params', help='JSON string of parameters for the worker')
 
-  # Stop command
-  stop_parser = subparsers.add_parser('stop', help='Stop a worker (interactive if key missing)')
+  stop_parser = subparsers.add_parser('stop', help='Request a worker to stop (interactive if key missing)')
   stop_parser.add_argument('worker_key', nargs='?', help='The key of the worker to stop')
 
-  # Params command
   params_parser = subparsers.add_parser('params', help='Show parameters for a worker')
   params_parser.add_argument('worker_key', nargs='?', help='The key of the worker')
 
+  daemon_parser = subparsers.add_parser('daemon', help='Run the reconcile loop (owns the worker processes)')
+  daemon_parser.add_argument('--interval', type=float, default=2.0, help='Seconds between reconcile passes')
+
+  return parser
+
+
+def main():
+  parser = _build_parser()
   args = parser.parse_args()
 
   if not args.command:
@@ -48,31 +73,43 @@ def main():
     sys.exit(1)
 
   workers_dir = resolve_workers_dir(args.workers_dir)
+
+  # The daemon is the process owner, not a client — it builds its own manager.
+  if args.command == 'daemon':
+    from ..daemon.runner import main as daemon_main
+
+    argv = ['--workers-dir', workers_dir, '--interval', str(args.interval)]
+    db_url = _db_url()
+    if db_url:
+      argv += ['--db-url', db_url]
+    sys.exit(daemon_main(argv))
+
   try:
-    with WorkerManager(workers_dir, create_dir=False, auto_recover=False) as manager:
+    with _build_client(workers_dir) as client:
       if args.command == 'status':
-        show_status(manager)
+        show_status(client, workers_dir)
       elif args.command == 'start':
-        import json
-
-        params = None
-        if args.params:
-          try:
-            params = json.loads(args.params)
-          except json.JSONDecodeError:
-            err_console().print('[bold red]Error:[/bold red] Invalid JSON in --params')
-            sys.exit(1)
-
-        if not start_worker(manager, args.worker_type, worker_key=args.key, parameters=params):
+        params = _parse_params(args.params)
+        if not start_worker(client, workers_dir, args.worker_type, worker_key=args.key, parameters=params):
           sys.exit(1)
       elif args.command == 'stop':
-        if not stop_worker(manager, args.worker_key):
+        if not stop_worker(client, args.worker_key):
           sys.exit(1)
       elif args.command == 'params':
-        if not show_params(manager, args.worker_key):
+        if not show_params(client, args.worker_key):
           sys.exit(1)
   except ValueError as e:
     err_console().print(f'[bold red]Error:[/bold red] {e}')
+    sys.exit(1)
+
+
+def _parse_params(raw):
+  if not raw:
+    return None
+  try:
+    return json.loads(raw)
+  except json.JSONDecodeError:
+    err_console().print('[bold red]Error:[/bold red] Invalid JSON in --params')
     sys.exit(1)
 
 

@@ -82,6 +82,23 @@ class TestStorageBackends(unittest.TestCase):
     self.assertEqual(count, 1)
     engine.dispose()
 
+  def test_two_storages_share_engine_without_double_begin(self):
+    # A WorkerClient and a WorkerManager may wrap the same shared sqlite engine;
+    # the 'begin' -> BEGIN IMMEDIATE tuning must be installed only once, or a
+    # transaction would try to BEGIN twice ("transaction within a transaction").
+    engine = create_engine(f'sqlite:///{os.path.join(self.tmp, "shared_twice.db")}')
+    first = Storage(engine=engine, create_tables=True)
+    second = Storage(engine=engine, create_tables=False)
+
+    with second.session_scope() as session:
+      session.add(Worker(worker_key='k', worker_type='t', status=WorkerStatus.STOPPED))
+    with first.session_scope() as session:
+      self.assertEqual(session.query(Worker).count(), 1)
+
+    first.dispose()
+    second.dispose()
+    engine.dispose()
+
   def test_create_tables_false_issues_no_ddl(self):
     # When the host owns the schema (e.g. via migrations), crazy_workers must
     # not create its tables — it leaves the engine's database untouched.

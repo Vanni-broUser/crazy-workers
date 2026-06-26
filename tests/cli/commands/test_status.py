@@ -1,22 +1,11 @@
 import os
 from io import StringIO
 from rich.console import Console
-from unittest import mock
 from unittest.mock import MagicMock, patch
 
-from crazy_workers.boot.base import BootState
 from crazy_workers.cli.commands import show_status
-from crazy_workers.cli.commands.status import _build_header
-from crazy_workers.cli.main import main as cli_main
+from crazy_workers.cli.commands.status import _build_header, _redact
 from tests.base import BaseTestCase
-
-
-class _FakeProvider:
-  def __init__(self, state):
-    self._state = state
-
-  def state(self, workers_dir):
-    return self._state
 
 
 class TestCliStatus(BaseTestCase):
@@ -29,110 +18,114 @@ class TestCliStatus(BaseTestCase):
     self.env_patcher.stop()
     super().tearDown()
 
-  def test_status_empty(self):
-    self.manager.list_workers = MagicMock(return_value=[])
-    with patch('sys.stdout', new=StringIO()) as fake_out:
-      result = show_status(self.manager)
-      self.assertEqual(result, [])
-      self.assertIn('No workers found', fake_out.getvalue())
+  def _client(self, workers):
+    client = MagicMock()
+    client.list.return_value = workers
+    return client
 
-  def test_status_truncates_long_params(self):
-    params = {'long_param_name_for_testing_truncation': 'value'}
-    self.manager.start_worker('example_worker', worker_key='status_test', parameters=params)
+  def test_lists_filesystem_types_when_db_empty(self):
+    # No DB rows, but example_worker.py exists → a NEVER_STARTED virtual row.
+    with patch('sys.stdout', new=StringIO()):
+      result = show_status(self._client([]), self.workers_path)
+    types = {w['worker_type'] for w in result}
+    self.assertIn('example_worker', types)
+    self.assertTrue(all(w['status'] == 'NEVER_STARTED' for w in result))
 
-    with patch('sys.argv', ['crazy-workers', 'status']):
-      with patch('rich.console.Console.print'):
-        with patch('rich.table.Table.add_row') as mock_add_row:
-          try:
-            cli_main()
-          except SystemExit as exc:
-            self.assertEqual(exc.code, 0)
+  def test_empty_when_no_files_and_no_rows(self):
+    with patch('os.listdir', return_value=[]):
+      with patch('sys.stdout', new=StringIO()) as fake_out:
+        result = show_status(self._client([]), self.workers_path)
+        self.assertEqual(result, [])
+        self.assertIn('No workers found', fake_out.getvalue())
 
-          found = False
-          for call in mock_add_row.call_args_list:
-            args = call[0]
-            if 'status_test' in args:
-              found = True
-              self.assertIn('Started', args[-2])
-              self.assertTrue(args[-1].endswith('...'))
-              break
-          self.assertTrue(found)
-
-    self.manager.stop_worker('status_test')
-
-  def test_status_crashed_worker_style(self):
-    self.manager.list_workers = MagicMock(
-      return_value=[
+  def test_desired_vs_actual_columns(self):
+    client = self._client(
+      [
         {
-          'worker_key': 'crashed',
+          'worker_key': 'w',
           'worker_type': 'example_worker',
+          'desired_status': 'RUNNING',
           'status': 'CRASHED',
           'pid': None,
           'parameters': {},
           'last_started_at': None,
           'last_stopped_at': None,
-        },
+        }
       ]
     )
-    with patch('sys.stdout', new=StringIO()):
-      with patch('rich.table.Table.add_row') as mock_add_row:
-        show_status(self.manager)
-        args = mock_add_row.call_args[0]
-        self.assertIn('bold red', args[3])
+    with patch('os.listdir', return_value=[]):
+      with patch('sys.stdout', new=StringIO()):
+        with patch('rich.table.Table.add_row') as mock_add_row:
+          show_status(client, self.workers_path)
+          args = mock_add_row.call_args[0]
+          # columns: #, key, type, desired, status, pid, last_action, params
+          self.assertIn('RUNNING', args[3])  # desired
+          self.assertIn('bold red', args[4])  # CRASHED actual style
 
-  def test_status_stopped_worker_with_timestamp(self):
-    self.manager.list_workers = MagicMock(
-      return_value=[
+  def test_stopped_with_timestamp(self):
+    client = self._client(
+      [
         {
-          'worker_key': 'stopped',
+          'worker_key': 's',
           'worker_type': 'example_worker',
+          'desired_status': 'STOPPED',
           'status': 'STOPPED',
           'pid': None,
           'parameters': {},
           'last_started_at': None,
           'last_stopped_at': '2024-01-01T12:00:00',
-        },
+        }
       ]
     )
-    with patch('sys.stdout', new=StringIO()):
-      with patch('rich.table.Table.add_row') as mock_add_row:
-        show_status(self.manager)
-        args = mock_add_row.call_args[0]
-        self.assertIn('Stopped', args[5])
-        self.assertIn('dim', args[3])
+    with patch('os.listdir', return_value=[]):
+      with patch('sys.stdout', new=StringIO()):
+        with patch('rich.table.Table.add_row') as mock_add_row:
+          show_status(client, self.workers_path)
+          args = mock_add_row.call_args[0]
+          self.assertIn('Stopped', args[6])  # last action
+          self.assertIn('dim', args[4])  # stopped style
+
+  def test_truncates_long_params_and_shows_started(self):
+    client = self._client(
+      [
+        {
+          'worker_key': 'lp',
+          'worker_type': 'example_worker',
+          'desired_status': 'RUNNING',
+          'status': 'RUNNING',
+          'pid': 5,
+          'parameters': {'long_param_name_for_truncation': 'x' * 50},
+          'last_started_at': '2024-01-01T12:00:00',
+          'last_stopped_at': None,
+        }
+      ]
+    )
+    with patch('os.listdir', return_value=[]):
+      with patch('sys.stdout', new=StringIO()):
+        with patch('rich.table.Table.add_row') as mock_add_row:
+          show_status(client, self.workers_path)
+          args = mock_add_row.call_args[0]
+          self.assertIn('Started', args[6])
+          self.assertTrue(args[7].endswith('...'))
 
 
 class TestStatusHeader(BaseTestCase):
-  def setUp(self):
-    super().setUp()
-    self._env = patch.dict(os.environ, {'CRAZY_WORKERS_NO_BOOT': ''})
-    self._env.start()
-
-  def tearDown(self):
-    self._env.stop()
-    super().tearDown()
-
-  def _render(self):
+  def _render(self, workers_dir):
     buffer = StringIO()
-    Console(file=buffer, width=200).print(_build_header(self.manager))
+    Console(file=buffer, width=200).print(_build_header(workers_dir))
     return buffer.getvalue()
 
-  def test_header_disabled(self):
-    os.environ['CRAZY_WORKERS_NO_BOOT'] = '1'
-    self.assertIn('disabled', self._render())
+  def test_header_self_contained(self):
+    with patch.dict(os.environ, {}, clear=False):
+      os.environ.pop('CRAZY_WORKERS_DB_URL', None)
+      self.assertIn('self-contained', self._render(self.workers_path))
 
-  def test_header_enabled(self):
-    self.manager._boot_provider = _FakeProvider(
-      BootState(supported=True, installed=True, mechanism='systemd-user', at_boot=True, detail='runs at boot')
-    )
-    self.assertIn('enabled', self._render())
+  def test_header_shared_db_redacts_password(self):
+    with patch.dict(os.environ, {'CRAZY_WORKERS_DB_URL': 'postgresql://user:secret@host:5432/db'}):
+      out = self._render(self.workers_path)
+      self.assertIn('shared DB', out)
+      self.assertNotIn('secret', out)
 
-  def test_header_not_installed(self):
-    self.manager._boot_provider = _FakeProvider(
-      BootState(supported=True, installed=False, mechanism='systemd-user', at_boot=False, detail='runs at user login')
-    )
-    self.assertIn('not installed', self._render())
-
-  def test_header_unsupported(self):
-    with mock.patch('crazy_workers.boot.orchestrator.get_provider', return_value=None):
-      self.assertIn('not supported', self._render())
+  def test_redact(self):
+    self.assertEqual(_redact('postgresql://u:p@h/db'), 'postgresql://u:***@h/db')
+    self.assertEqual(_redact('sqlite:///x.db'), 'sqlite:///x.db')

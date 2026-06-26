@@ -39,8 +39,13 @@ class Storage:
       self.engine = create_engine(url, connect_args=connect_args)
       self._owns_engine = True
 
-    if self.engine.dialect.name == 'sqlite':
+    # The tuning below registers engine-level listeners; on a shared engine more
+    # than one Storage may wrap it, so install exactly once per engine — a second
+    # 'begin' listener would emit a second BEGIN IMMEDIATE (transaction within a
+    # transaction) and fail.
+    if self.engine.dialect.name == 'sqlite' and not getattr(self.engine, '_cw_sqlite_tuned', False):
       self._install_sqlite_tuning()
+      self.engine._cw_sqlite_tuned = True
 
     self.Session = sessionmaker(bind=self.engine)
     if create_tables:

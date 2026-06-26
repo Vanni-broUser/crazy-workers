@@ -1,6 +1,7 @@
 import logging
 import os
 import re
+from datetime import datetime, timezone
 from sqlalchemy import func
 from sqlalchemy.exc import IntegrityError
 
@@ -60,7 +61,7 @@ def _check_already_running(manager, worker, session):
       return True
     else:
       logger.warning(f'Worker {worker.worker_key} found in RUNNING state but PID {worker.pid} is dead. Cleaning up.')
-      worker.status = WorkerStatus.CRASHED
+      _mark_crashed(worker)
       session.commit()
   return False
 
@@ -123,7 +124,7 @@ def _spawn_worker_process(manager, worker, worker_path, parameters, env, session
   )
 
   if handle is None:
-    worker.status = WorkerStatus.CRASHED
+    _mark_crashed(worker)
     worker.pid = None
     session.commit()
     return False, 'Worker process failed to start'
@@ -131,11 +132,22 @@ def _spawn_worker_process(manager, worker, worker_path, parameters, env, session
   worker.pid = handle.pid
   worker.status = WorkerStatus.RUNNING
   worker.last_started_at = func.now()
+  # A clean start clears the crash backoff so the next failure starts over.
+  worker.restart_count = 0
   session.commit()
 
   manager._active_processes[worker.worker_key] = handle
   _ensure_boot_restore(manager)
   return True, worker.to_dict()
+
+
+def _mark_crashed(worker):
+  # Record a death for crash backoff: bump the restart counter and stamp the
+  # exit time in UTC (Python-side, so the reconciler's backoff math does not
+  # depend on the DB dialect's now()/timezone semantics).
+  worker.status = WorkerStatus.CRASHED
+  worker.last_exit_at = datetime.now(timezone.utc)
+  worker.restart_count = (worker.restart_count or 0) + 1
 
 
 def _ensure_boot_restore(manager):

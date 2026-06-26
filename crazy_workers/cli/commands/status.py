@@ -1,48 +1,74 @@
 import json
+import os
+import re
 from datetime import datetime
 from rich.panel import Panel
 from rich.table import Table
 
-from ...boot import boot_state
 from ..ui import console
 
 
-def show_status(manager):
-  """Observability hub: boot-restore state plus the worker table."""
-  console().print(_build_header(manager))
+def show_status(client, workers_dir):
+  """Observability hub: the target state store plus the worker table (desired vs actual)."""
+  console().print(_build_header(workers_dir))
 
-  workers = manager.list_workers()
+  workers = _merge_with_filesystem(client.list(), workers_dir)
   if not workers:
-    console().print('[yellow]No workers found in database.[/yellow]')
+    console().print('[yellow]No workers found.[/yellow]')
     return workers
 
   console().print(_build_table(workers))
   return workers
 
 
-def _build_header(manager):
-  state = boot_state(manager.workers_dir, provider=manager._boot_provider)
-  if state.mechanism == 'disabled':
-    boot_line = '[dim]boot-restore: disabled[/dim]'
-  elif not state.supported:
-    boot_line = '[dim]boot-restore: not supported on this platform[/dim]'
-  elif state.installed:
-    boot_line = f'[green]boot-restore: enabled[/green] [dim]({state.mechanism}, {state.detail})[/dim]'
+def _build_header(workers_dir):
+  db_url = os.environ.get('CRAZY_WORKERS_DB_URL')
+  if db_url:
+    target = f'[green]shared DB[/green] [dim]({_redact(db_url)})[/dim]'
   else:
-    reason = f' — {state.detail}' if state.detail else ''
-    boot_line = f'[yellow]boot-restore: not installed[/yellow][dim]{reason}[/dim]'
-
-  body = f'[bold]Workers dir:[/bold] {manager.workers_dir}\n{boot_line}'
+    target = '[dim]self-contained SQLite (.service/workers.db)[/dim]'
+  body = f'[bold]Workers dir:[/bold] {workers_dir}\n[bold]State store:[/bold] {target}'
   return Panel.fit(body, border_style='cyan', title='[bold cyan]Crazy Workers status[/bold cyan]')
+
+
+def _redact(db_url):
+  """Hide the password in a SQLAlchemy URL for display."""
+  return re.sub(r'://([^:/@]+):[^@]*@', r'://\1:***@', db_url)
+
+
+def _merge_with_filesystem(db_workers, workers_dir):
+  """Append NEVER_STARTED rows for worker scripts that have no DB record yet."""
+  results = list(db_workers)
+  registered_types = {w['worker_type'] for w in results}
+  try:
+    available = sorted({f[:-3] for f in os.listdir(workers_dir) if f.endswith('.py') and f != '__init__.py'})
+  except OSError:
+    available = []
+  for worker_type in available:
+    if worker_type not in registered_types:
+      results.append(
+        {
+          'worker_key': None,
+          'worker_type': worker_type,
+          'parameters': {},
+          'desired_status': None,
+          'pid': None,
+          'status': 'NEVER_STARTED',
+          'last_started_at': None,
+          'last_stopped_at': None,
+        }
+      )
+  return results
 
 
 def _build_table(workers):
   table = Table(
-    title='[bold cyan]Active & Registered Workers[/bold cyan]', border_style='cyan', header_style='bold magenta'
+    title='[bold cyan]Workers — desired vs actual[/bold cyan]', border_style='cyan', header_style='bold magenta'
   )
   table.add_column('#', justify='right', style='dim')
   table.add_column('Key', style='bold')
   table.add_column('Type')
+  table.add_column('Desired', justify='center')
   table.add_column('Status', justify='center')
   table.add_column('PID', justify='right', style='green')
   table.add_column('Last Action', justify='center')
@@ -51,12 +77,15 @@ def _build_table(workers):
   for i, w in enumerate(workers, 1):
     status = w['status']
     status_style = 'green' if status == 'RUNNING' else 'yellow'
-    if status in ['CRASHED', 'FAILED']:
+    if status in ('CRASHED', 'FAILED'):
       status_style = 'bold red'
     elif status == 'STOPPED':
       status_style = 'dim'
     elif status == 'NEVER_STARTED':
       status_style = 'cyan'
+
+    desired = w.get('desired_status') or '-'
+    desired_style = 'green' if desired == 'RUNNING' else 'dim'
 
     last_action = '-'
     if status == 'RUNNING' and w.get('last_started_at'):
@@ -74,6 +103,7 @@ def _build_table(workers):
       str(i),
       w['worker_key'] or '-',
       w['worker_type'],
+      f'[{desired_style}]{desired}[/{desired_style}]',
       f'[{status_style}]{status}[/{status_style}]',
       str(w['pid']) if w['pid'] else '-',
       last_action,
