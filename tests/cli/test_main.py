@@ -108,6 +108,17 @@ class TestCliMain(BaseTestCase):
           self.assertIn('shared1', output)
           self.assertIn('shared DB', output)
 
+  def test_cli_status_json_flag(self):
+    self._seed_request('example_worker', 'json_test')
+    argv = ['crazy-workers', '--workers-dir', self.workers_path, 'status', '--json']
+    with patch('sys.argv', argv):
+      with patch('sys.stdout', new=StringIO()) as fake_out:
+        cli_main()
+        data = __import__('json').loads(fake_out.getvalue())
+    self.assertIn('workers', data)
+    keys = [w['worker_key'] for w in data['workers']]
+    self.assertIn('json_test', keys)
+
   def test_cli_no_command(self):
     with patch('sys.argv', ['crazy-workers']):
       with patch('sys.stdout', new=StringIO()):

@@ -1,6 +1,7 @@
 import json
 import os
 import re
+import sys
 from datetime import datetime
 from rich.panel import Panel
 from rich.table import Table
@@ -8,11 +9,15 @@ from rich.table import Table
 from ..ui import console
 
 
-def show_status(client, workers_dir):
+def show_status(client, workers_dir, json_mode=False):
   """Observability hub: the target state store plus the worker table (desired vs actual)."""
-  console().print(_build_header(workers_dir))
-
   workers = _merge_with_filesystem(client.list(), workers_dir)
+
+  if json_mode:
+    sys.stdout.write(json.dumps({'workers': workers}) + '\n')
+    return workers
+
+  console().print(_build_header(workers_dir))
   if not workers:
     console().print('[yellow]No workers found.[/yellow]')
     return workers
