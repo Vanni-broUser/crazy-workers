@@ -72,7 +72,11 @@ def main():
     parser.print_help()
     sys.exit(1)
 
-  workers_dir = resolve_workers_dir(args.workers_dir)
+  # Only `start` (lists/validates the worker scripts) and the daemon (owns them)
+  # truly need the workers dir. With a shared DB, status/stop/params work without
+  # it, so we must not block on the interactive prompt (see CRAZY_WORKERS_DB_URL).
+  needs_dir = args.command in ('start', 'daemon') or _db_url() is None
+  workers_dir = resolve_workers_dir(args.workers_dir, required=needs_dir)
 
   # The daemon is the process owner, not a client — it builds its own manager.
   if args.command == 'daemon':

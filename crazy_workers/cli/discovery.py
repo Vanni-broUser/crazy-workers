@@ -45,7 +45,15 @@ def save_to_env(key, value):
   os.replace(tmp, '.env')
 
 
-def resolve_workers_dir(flag_dir):
+def resolve_workers_dir(flag_dir, required=True):
+  """Locate the workers directory (where the ``.py`` scripts live).
+
+  ``required=False`` is used by commands that only talk to a shared DB (e.g.
+  ``status``/``stop``/``params`` with ``CRAZY_WORKERS_DB_URL`` set): they do not
+  need the scripts, so we must never block on the interactive prompt. In that
+  mode the dir is best-effort — returned from the flag/env/``workers`` fallback
+  if available, otherwise ``None``.
+  """
   load_env()
 
   # 1. Flag priority
@@ -64,6 +72,10 @@ def resolve_workers_dir(flag_dir):
     else:
       err_console().print(f'[bold red]Error:[/bold red] Directory "{env_dir}" (from CRAZY_WORKERS_DIR) does not exist.')
       sys.exit(1)
+
+  # When the dir is not needed, never prompt or exit — report it as unknown.
+  if not required:
+    return 'workers' if os.path.isdir('workers') else None
 
   # 3. Interactive Prompt
   if sys.stdin.isatty():
