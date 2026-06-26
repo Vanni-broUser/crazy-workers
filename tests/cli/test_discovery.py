@@ -167,3 +167,34 @@ class TestDiscovery(BaseTestCase):
               resolve_workers_dir(None)
             self.assertEqual(cm.exception.code, 1)
             self.assertIn('Workers directory not found', fake_err.getvalue())
+
+  def test_resolve_not_required_returns_none_without_prompting(self):
+    # On a TTY with nothing configured, a non-required resolution must neither
+    # prompt nor exit — it just reports the dir as unknown (None).
+    with patch.dict(os.environ, {}, clear=True):
+      with patch('os.path.isdir', return_value=False):
+        with patch('sys.stdin.isatty', return_value=True):
+          with patch('crazy_workers.cli.discovery.Prompt.ask', side_effect=AssertionError('should not prompt')):
+            self.assertIsNone(resolve_workers_dir(None, required=False))
+
+  def test_resolve_not_required_still_uses_env(self):
+    with patch.dict(os.environ, {'CRAZY_WORKERS_DIR': self.workers_path}, clear=True):
+      self.assertEqual(resolve_workers_dir(None, required=False), self.workers_path)
+
+  def test_status_with_shared_db_does_not_prompt(self):
+    # The reported bug: `crazy-workers status` against a shared DB prompted for
+    # the workers dir even though the command does not need it.
+    from crazy_workers.database.storage import Storage
+
+    db_file = os.path.abspath(os.path.join(self.test_dir, 'shared.db'))
+    db_url = f'sqlite:///{db_file}'
+    Storage(db_url=db_url, create_tables=True).dispose()  # materialise the schema
+
+    with patch.dict(os.environ, {'CRAZY_WORKERS_DB_URL': db_url}, clear=True):
+      with patch('os.path.isdir', return_value=False):
+        with patch('sys.stdin.isatty', return_value=True):
+          with patch('crazy_workers.cli.discovery.Prompt.ask', side_effect=AssertionError('should not prompt')):
+            with patch('sys.argv', ['crazy-workers', 'status']):
+              with patch('sys.stdout', new=StringIO()) as fake_out:
+                cli_main()
+                self.assertIn('Crazy Workers status', fake_out.getvalue())
