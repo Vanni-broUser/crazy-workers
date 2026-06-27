@@ -1,12 +1,15 @@
+import os
 import psutil
 import subprocess
 import sys
-from unittest.mock import MagicMock, patch
+import tempfile
+from unittest.mock import MagicMock, mock_open, patch
 
 from crazy_workers.core.engine import (
   get_running_process,
   is_process_running,
   is_worker_process,
+  resolve_system_pid,
   terminate_process,
   worker_key_token,
 )
@@ -72,6 +75,51 @@ class TestEngine(BaseTestCase):
   def test_is_process_running_oserror(self):
     with patch('crazy_workers.core.engine.get_running_process', side_effect=OSError('disk error')):
       self.assertFalse(is_process_running(123))
+
+  def test_resolve_system_pid_none(self):
+    self.assertIsNone(resolve_system_pid(None))
+
+  def test_resolve_system_pid_windows_returns_control_pid(self):
+    with patch('crazy_workers.core.engine.os.name', 'nt'):
+      self.assertEqual(resolve_system_pid(123), 123)
+
+  def test_resolve_system_pid_reads_linux_nspid(self):
+    with patch('crazy_workers.core.engine.os.name', 'posix'):
+      with patch('builtins.open', mock_open(read_data='Name:\tpython\nNSpid:\t4321\t17\n')):
+        self.assertEqual(resolve_system_pid(17), 4321)
+
+  def test_resolve_system_pid_reads_host_proc_mount(self):
+    with tempfile.TemporaryDirectory() as host_proc:
+      proc_dir = f'{host_proc}/4321'
+
+      os.mkdir(proc_dir)
+      with open(f'{proc_dir}/status', 'w', encoding='utf-8') as f:
+        f.write('Name:\tpython\nNSpid:\t4321\t17\n')
+      with open(f'{proc_dir}/cmdline', 'wb') as f:
+        f.write(b'python\0-u\0--cw-key=register_1\0')
+
+      with patch('crazy_workers.core.engine.os.name', 'posix'):
+        with patch.dict(os.environ, {'CRAZY_WORKERS_HOST_PROC': host_proc}):
+          self.assertEqual(resolve_system_pid(17, worker_key='register_1'), 4321)
+
+  def test_resolve_system_pid_ignores_host_proc_key_mismatch(self):
+    with tempfile.TemporaryDirectory() as host_proc:
+      proc_dir = f'{host_proc}/4321'
+
+      os.mkdir(proc_dir)
+      with open(f'{proc_dir}/status', 'w', encoding='utf-8') as f:
+        f.write('Name:\tpython\nNSpid:\t4321\t17\n')
+      with open(f'{proc_dir}/cmdline', 'wb') as f:
+        f.write(b'python\0-u\0--cw-key=other\0')
+
+      with patch('crazy_workers.core.engine.os.name', 'posix'):
+        with patch.dict(os.environ, {'CRAZY_WORKERS_HOST_PROC': host_proc}):
+          self.assertEqual(resolve_system_pid(17, worker_key='register_1'), 17)
+
+  def test_resolve_system_pid_falls_back_on_proc_error(self):
+    with patch('crazy_workers.core.engine.os.name', 'posix'):
+      with patch('builtins.open', side_effect=OSError('no proc')):
+        self.assertEqual(resolve_system_pid(17), 17)
 
   def test_terminate_exclude_pids_psutil_error(self):
     mock_proc = MagicMock(spec=psutil.Process)

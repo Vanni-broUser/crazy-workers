@@ -1,4 +1,5 @@
 import logging
+import os
 import psutil
 import subprocess
 
@@ -62,6 +63,81 @@ def is_process_running(pid):
     return get_running_process(pid) is not None
   except (psutil.Error, OSError):
     return False
+
+
+def resolve_system_pid(pid, worker_key=None):
+  """Return the most-native PID visible for ``pid``.
+
+  ``pid`` remains the control PID used by the current process namespace. On
+  Linux, ``CRAZY_WORKERS_HOST_PROC`` can point at a read-only host procfs mount
+  (for example /host/proc in Docker) so status can show the host PID. Without
+  that mount, /proc exposes NSpid when PID namespaces are visible; its first
+  value is the PID in the outermost namespace visible to this procfs mount. On
+  Windows and ordinary Linux hosts this is just ``pid``.
+  """
+  if pid is None:
+    return None
+  if os.name != 'posix':
+    return pid
+
+  host_pid = _resolve_from_host_proc(pid, worker_key=worker_key)
+  if host_pid is not None:
+    return host_pid
+
+  try:
+    with open(f'/proc/{pid}/status', encoding='utf-8') as f:
+      for line in f:
+        if line.startswith('NSpid:'):
+          values = [int(value) for value in line.split()[1:]]
+          return values[0] if values else pid
+  except (OSError, ValueError):
+    return pid
+
+  return pid
+
+
+def _resolve_from_host_proc(pid, worker_key=None):
+  host_proc = os.environ.get('CRAZY_WORKERS_HOST_PROC')
+  if not host_proc:
+    return None
+  if not os.path.isdir(host_proc):
+    return None
+
+  for entry in os.listdir(host_proc):
+    if not entry.isdigit():
+      continue
+
+    status_path = os.path.join(host_proc, entry, 'status')
+    try:
+      with open(status_path, encoding='utf-8') as f:
+        nspid = _read_nspid(f)
+    except (OSError, ValueError):
+      continue
+
+    if not nspid or nspid[-1] != pid:
+      continue
+    if worker_key and not _host_proc_cmdline_matches(host_proc, entry, worker_key):
+      continue
+    return nspid[0]
+
+  return None
+
+
+def _read_nspid(lines):
+  for line in lines:
+    if line.startswith('NSpid:'):
+      return [int(value) for value in line.split()[1:]]
+  return None
+
+
+def _host_proc_cmdline_matches(host_proc, host_pid, worker_key):
+  try:
+    with open(os.path.join(host_proc, host_pid, 'cmdline'), 'rb') as f:
+      raw = f.read()
+  except OSError:
+    return False
+  parts = [part.decode(errors='ignore') for part in raw.split(b'\0') if part]
+  return worker_key_token(worker_key) in parts
 
 
 def terminate_process(pid, timeout=5, popen_process=None, exclude_pids=None):
