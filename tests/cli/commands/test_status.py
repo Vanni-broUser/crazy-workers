@@ -5,7 +5,7 @@ from rich.console import Console
 from unittest.mock import MagicMock, patch
 
 from crazy_workers.cli.commands import show_status
-from crazy_workers.cli.commands.status import _build_header, _redact
+from crazy_workers.cli.commands.status import _build_header, _format_pid, _redact
 from tests.base import BaseTestCase
 
 
@@ -109,6 +109,12 @@ class TestCliStatus(BaseTestCase):
           self.assertIn('Started', args[6])
           self.assertTrue(args[7].endswith('...'))
 
+  def test_formats_system_pid_when_namespace_pid_differs(self):
+    self.assertEqual(_format_pid({'pid': 17, 'system_pid': 4321}), '4321 [dim](ns 17)[/dim]')
+
+  def test_formats_pid_without_namespace_mapping(self):
+    self.assertEqual(_format_pid({'pid': 17, 'system_pid': 17}), '17')
+
 
 class TestCliStatusJson(BaseTestCase):
   def _client(self, workers):
@@ -138,6 +144,7 @@ class TestCliStatusJson(BaseTestCase):
     self.assertEqual(data['workers'][0]['worker_key'], 'w1')
     self.assertEqual(data['workers'][0]['desired_status'], 'RUNNING')
     self.assertEqual(data['workers'][0]['status'], 'RUNNING')
+    self.assertEqual(data['workers'][0]['system_pid'], 42)
 
   def test_json_mode_empty_returns_empty_list(self):
     with patch('os.listdir', return_value=[]):

@@ -6,12 +6,13 @@ from datetime import datetime
 from rich.panel import Panel
 from rich.table import Table
 
+from ...core.engine import resolve_system_pid
 from ..ui import console
 
 
 def show_status(client, workers_dir, json_mode=False):
   """Observability hub: the target state store plus the worker table (desired vs actual)."""
-  workers = _merge_with_filesystem(client.list(), workers_dir)
+  workers = _with_system_pids(_merge_with_filesystem(client.list(), workers_dir))
 
   if json_mode:
     sys.stdout.write(json.dumps({'workers': workers}) + '\n')
@@ -70,6 +71,25 @@ def _merge_with_filesystem(db_workers, workers_dir):
   return results
 
 
+def _with_system_pids(workers):
+  results = []
+  for worker in workers:
+    enriched = dict(worker)
+    enriched['system_pid'] = resolve_system_pid(enriched.get('pid'), worker_key=enriched.get('worker_key'))
+    results.append(enriched)
+  return results
+
+
+def _format_pid(worker):
+  pid = worker.get('pid')
+  system_pid = worker.get('system_pid')
+  if not pid:
+    return '-'
+  if system_pid and system_pid != pid:
+    return f'{system_pid} [dim](ns {pid})[/dim]'
+  return str(pid)
+
+
 def _build_table(workers):
   table = Table(
     title='[bold cyan]Workers — desired vs actual[/bold cyan]', border_style='cyan', header_style='bold magenta'
@@ -114,7 +134,7 @@ def _build_table(workers):
       w['worker_type'],
       f'[{desired_style}]{desired}[/{desired_style}]',
       f'[{status_style}]{status}[/{status_style}]',
-      str(w['pid']) if w['pid'] else '-',
+      _format_pid(w),
       last_action,
       params_str,
     )
