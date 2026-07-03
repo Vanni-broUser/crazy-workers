@@ -107,8 +107,8 @@ class WorkerManager:
     else:
       self.storage = None
 
-  def start_worker(self, worker_type, worker_key=None, parameters=None, env=None):
-    return start_worker(self, worker_type, worker_key, parameters, env)
+  def start_worker(self, worker_type, worker_key=None, parameters=None, env=None, reset_backoff=True):
+    return start_worker(self, worker_type, worker_key, parameters, env, reset_backoff)
 
   def stop_worker(self, worker_key):
     return stop_worker(self, worker_key)
