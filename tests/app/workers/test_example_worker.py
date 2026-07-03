@@ -18,8 +18,11 @@ class TestExampleWorkerUnit(unittest.TestCase):
   def tearDown(self):
     logging.disable(logging.NOTSET)
 
-  def test_missing_params_returns_early(self):
-    with patch.object(sys, 'argv', ['example_worker.py']):
+  def test_no_params_runs_with_defaults(self):
+    def stop_on_sleep(*args):
+      self.mod.running = False
+
+    with patch.object(sys, 'argv', ['example_worker.py']), patch('time.sleep', side_effect=stop_on_sleep):
       self.mod.main()
 
   def test_runs_for_duration(self):

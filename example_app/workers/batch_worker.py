@@ -1,11 +1,11 @@
-import json
 import logging
-import sys
 import time
+
+from crazy_workers import parse_params
 
 
 def main():
-  params = json.loads(sys.argv[1]) if len(sys.argv) > 1 else {}
+  params = parse_params()
   items = params.get('items', ['task1', 'task2', 'task3'])
   delay = params.get('delay', 2)
 

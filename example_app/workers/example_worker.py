@@ -1,8 +1,8 @@
-import json
 import logging
 import signal
-import sys
 import time
+
+from crazy_workers import parse_params
 
 
 running = True
@@ -21,11 +21,7 @@ def main():
   signal.signal(signal.SIGTERM, signal_handler)
   signal.signal(signal.SIGINT, signal_handler)
 
-  if len(sys.argv) < 2:
-    logging.error('Missing parameters')
-    return
-
-  params = json.loads(sys.argv[1])
+  params = parse_params()
   duration = params.get('duration', 60)
   worker_key = params.get('worker_key', 'unknown')
 

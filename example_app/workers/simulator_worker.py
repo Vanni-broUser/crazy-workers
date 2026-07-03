@@ -1,11 +1,12 @@
-import json
 import logging
 import sys
 import time
 
+from crazy_workers import parse_params
+
 
 def main():
-  params = json.loads(sys.argv[1]) if len(sys.argv) > 1 else {}
+  params = parse_params()
   steps = params.get('steps', 10)
   fail_at = params.get('fail_at', -1)
 

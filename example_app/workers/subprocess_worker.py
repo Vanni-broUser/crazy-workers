@@ -3,14 +3,15 @@ Worker used in tests: spawns a long-running child subprocess and writes
 its PID to a file so tests can verify it is cleaned up on stop_worker().
 """
 
-import json
 import subprocess
 import sys
 import time
 
+from crazy_workers import parse_params
+
 
 def main():
-  params = json.loads(sys.argv[1]) if len(sys.argv) > 1 else {}
+  params = parse_params()
   pid_file = params.get('pid_file', '')
 
   child = subprocess.Popen(
