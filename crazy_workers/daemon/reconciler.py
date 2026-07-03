@@ -20,12 +20,23 @@ class Reconciler:
   Owns every worker process for one workers_dir/DB. Clients never spawn; they
   only set desired_status in the shared DB and this loop makes it so.
 
-  | desired  | alive | action                              |
-  |----------|-------|-------------------------------------|
-  | RUNNING  | no    | start (skipped while in backoff)    |
-  | RUNNING  | yes   | noop (reconcile observed status)    |
-  | STOPPED  | yes   | stop                                |
-  | STOPPED  | no    | noop                                |
+  | desired  | alive | observed        | action                                     |
+  |----------|-------|-----------------|--------------------------------------------|
+  | RUNNING  | no    | RUNNING         | record crash (mark CRASHED, +restart_count)|
+  | RUNNING  | no    | other           | start (skipped while in backoff)           |
+  | RUNNING  | yes   | RUNNING         | noop (reset backoff once proven healthy)   |
+  | RUNNING  | yes   | other           | heal observed status to RUNNING            |
+  | STOPPED  | yes   | -               | stop                                       |
+  | STOPPED  | no    | RUNNING/CRASHED | heal stale observed status to STOPPED      |
+  | STOPPED  | no    | STOPPED         | noop                                       |
+
+  Crash detection is split from the restart on purpose. A worker that dies the
+  instant it starts comes back from ``start_worker`` marked RUNNING; if the same
+  pass that noticed the dead PID respawned it, its status would flip to RUNNING
+  again before the backoff branch ever saw CRASHED, and an instantly-crashing
+  worker would respawn at full loop speed forever. Instead the first pass records
+  the death (CRASHED + a bumped restart_count), and a later pass restarts it once
+  the exponential backoff has elapsed.
   """
 
   def __init__(self, manager, interval=2.0):
@@ -84,19 +95,44 @@ class Reconciler:
     alive = self.manager.backend.is_alive(pid=row['pid'], worker_key=row['worker_key'])
 
     if row['desired'] == DesiredStatus.RUNNING and not alive:
+      if row['status'] == WorkerStatus.RUNNING:
+        # We last saw it RUNNING but the process is gone: it crashed. Record the
+        # death now and let a later pass restart it — see the class docstring for
+        # why detection and restart are split across passes.
+        logger.warning('Reconcile: worker %s died; recording crash', row['worker_key'])
+        self._record_crash(row['worker_key'])
+        return 'crashed'
       if self._in_backoff(row):
         return None
       logger.info('Reconcile: starting %s', row['worker_key'])
-      self.manager.start_worker(row['worker_type'], row['worker_key'], row['parameters'])
+      # reset_backoff=False: an automatic restart must not wipe the crash history
+      # a fast crash-loop is accumulating, or the backoff could never escalate.
+      self.manager.start_worker(row['worker_type'], row['worker_key'], row['parameters'], reset_backoff=False)
       return 'start'
-    if row['desired'] == DesiredStatus.STOPPED and alive:
-      logger.info('Reconcile: stopping %s', row['worker_key'])
-      self.manager.stop_worker(row['worker_key'])
-      return 'stop'
-    if row['desired'] == DesiredStatus.RUNNING and alive and row['status'] != WorkerStatus.RUNNING:
-      # Process is up but the observed status drifted (e.g. left STARTING). Heal it.
-      self._mark_running(row['worker_key'])
-      return 'mark_running'
+    if row['desired'] == DesiredStatus.STOPPED:
+      if alive:
+        logger.info('Reconcile: stopping %s', row['worker_key'])
+        self.manager.stop_worker(row['worker_key'])
+        return 'stop'
+      if row['status'] not in (WorkerStatus.STOPPED, WorkerStatus.NEVER_STARTED):
+        # Desired down and the process is already gone, but the observed status is
+        # stale — RUNNING left by the last spawn, or CRASHED. Nothing kills the
+        # process (it is dead) and stop_worker only handles a RUNNING worker, so
+        # converge the observed status here, or the table shows a phantom
+        # RUNNING/CRASHED with a dead PID forever.
+        self._mark_stopped(row['worker_key'])
+        return 'mark_stopped'
+      return None
+    if row['desired'] == DesiredStatus.RUNNING and alive:
+      if row['status'] != WorkerStatus.RUNNING:
+        # Process is up but the observed status drifted (e.g. left STARTING). Heal it.
+        self._mark_running(row['worker_key'])
+        return 'mark_running'
+      if row['restart_count']:
+        # Alive a full pass after its last spawn — proven healthy. Clear the crash
+        # backoff so a future crash starts counting (and backing off) from zero.
+        self._reset_backoff(row['worker_key'])
+        return 'reset_backoff'
     return None
 
   def _in_backoff(self, row):
@@ -116,3 +152,30 @@ class Reconciler:
       worker = session.query(Worker).filter_by(worker_key=worker_key).first()
       if worker:
         worker.status = WorkerStatus.RUNNING
+
+  def _record_crash(self, worker_key):
+    # Persist the death so the next pass's backoff gate can see it: mark CRASHED,
+    # bump the restart counter and stamp the exit time in UTC (Python-side, so the
+    # backoff math does not depend on the DB dialect's now()/timezone semantics).
+    # pid is cleared so we stop probing a dead (and potentially reused) PID.
+    with self.manager.storage.session_scope() as session:
+      worker = session.query(Worker).filter_by(worker_key=worker_key).first()
+      if worker:
+        worker.status = WorkerStatus.CRASHED
+        worker.last_exit_at = datetime.now(timezone.utc)
+        worker.restart_count = (worker.restart_count or 0) + 1
+        worker.pid = None
+
+  def _reset_backoff(self, worker_key):
+    with self.manager.storage.session_scope() as session:
+      worker = session.query(Worker).filter_by(worker_key=worker_key).first()
+      if worker:
+        worker.restart_count = 0
+
+  def _mark_stopped(self, worker_key):
+    with self.manager.storage.session_scope() as session:
+      worker = session.query(Worker).filter_by(worker_key=worker_key).first()
+      if worker:
+        worker.status = WorkerStatus.STOPPED
+        worker.pid = None
+        worker.last_stopped_at = datetime.now(timezone.utc)

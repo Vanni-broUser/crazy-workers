@@ -19,7 +19,7 @@ logger = logging.getLogger('crazy_workers')
 _SAFE_NAME = re.compile(r'[A-Za-z0-9_-]+')
 
 
-def start_worker(manager, worker_type, worker_key=None, parameters=None, env=None):
+def start_worker(manager, worker_type, worker_key=None, parameters=None, env=None, reset_backoff=True):
   if not manager.storage:
     return False, 'System not initialized (database missing)'
 
@@ -43,7 +43,7 @@ def start_worker(manager, worker_type, worker_key=None, parameters=None, env=Non
       worker.status = WorkerStatus.STOPPED
       return False, f'Worker file {worker_type}.py not found'
 
-    return _spawn_worker_process(manager, worker, worker_path, parameters, env, session)
+    return _spawn_worker_process(manager, worker, worker_path, parameters, env, session, reset_backoff)
 
 
 def _validate_inputs(worker_type, worker_key):
@@ -107,7 +107,7 @@ def _get_worker_script_path(manager, worker_type):
   return worker_path
 
 
-def _spawn_worker_process(manager, worker, worker_path, parameters, env, session):
+def _spawn_worker_process(manager, worker, worker_path, parameters, env, session, reset_backoff=True):
   log_file_path = os.path.join(manager.logs_dir, f'{worker.worker_key}.log')
 
   # The manager's worker_env is the baseline for every worker (e.g. the host
@@ -132,8 +132,13 @@ def _spawn_worker_process(manager, worker, worker_path, parameters, env, session
   worker.pid = handle.pid
   worker.status = WorkerStatus.RUNNING
   worker.last_started_at = func.now()
-  # A clean start clears the crash backoff so the next failure starts over.
-  worker.restart_count = 0
+  # A clean start (CLI/client/manual restart) clears the crash backoff so the
+  # next failure starts over. An automatic reconciler restart passes
+  # reset_backoff=False: a fast crash-loop must keep accumulating restart_count
+  # across respawns, otherwise the exponential backoff can never escalate. The
+  # reconciler instead resets the counter once the worker is observed healthy.
+  if reset_backoff:
+    worker.restart_count = 0
   session.commit()
 
   manager._active_processes[worker.worker_key] = handle

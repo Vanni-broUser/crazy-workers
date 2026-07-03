@@ -37,6 +37,9 @@ class _ReconcilerTestBase(unittest.TestCase):
   def _status(self, worker_key):
     return self.client.get(worker_key)['status']
 
+  def _restart_count(self, worker_key):
+    return self.client.get(worker_key)['restart_count']
+
 
 class TestReconcileTable(_ReconcilerTestBase):
   def test_running_and_dead_starts(self):
@@ -75,6 +78,30 @@ class TestReconcileTable(_ReconcilerTestBase):
     self.assertEqual(actions, [])
     self.assertEqual(self.backend.start_count('w1'), 0)
 
+  def test_stopped_and_dead_heals_stale_running_status(self):
+    # A worker whose process died while it was desired STOPPED keeps a stale
+    # RUNNING status (the CLI reads it verbatim). The reconciler converges it.
+    self.client.request_start('example_worker', worker_key='w1')
+    self.reconciler.reconcile_once()  # RUNNING + alive
+    self.client.request_stop('w1')
+    self.backend.crash('w1')  # process gone, but status still RUNNING in DB
+    self._set('w1', status=WorkerStatus.RUNNING)
+
+    actions = self.reconciler.reconcile_once()
+
+    self.assertIn(('w1', 'mark_stopped'), actions)
+    self.assertEqual(self._status('w1'), 'STOPPED')
+
+  def test_stopped_and_dead_heals_stale_crashed_status(self):
+    self.client.request_start('example_worker', worker_key='w1')
+    self.client.request_stop('w1')
+    self._set('w1', status=WorkerStatus.CRASHED, pid=None)
+
+    actions = self.reconciler.reconcile_once()
+
+    self.assertIn(('w1', 'mark_stopped'), actions)
+    self.assertEqual(self._status('w1'), 'STOPPED')
+
   def test_mark_running_heals_status_drift(self):
     self.client.request_start('example_worker', worker_key='w1')
     self.reconciler.reconcile_once()  # RUNNING + alive
@@ -96,14 +123,25 @@ class TestReconcileTable(_ReconcilerTestBase):
 
 
 class TestReconcileRecovery(_ReconcilerTestBase):
-  def test_crashed_running_worker_is_restarted(self):
-    # Recovery is just a special case of reconciliation: desired RUNNING + dead PID.
+  def test_crashed_running_worker_is_recorded_then_restarted(self):
+    # Recovery of a dead RUNNING worker is a two-phase process: one pass records
+    # the crash (so backoff can gate it), a later pass restarts it once backoff
+    # has elapsed.
     self.client.request_start('example_worker', worker_key='w1')
     self.reconciler.reconcile_once()
     self.backend.crash('w1')  # process dies unexpectedly; DB still says RUNNING
 
-    self.reconciler.reconcile_once()
+    # Phase 1: crash recorded, NOT restarted yet.
+    actions = self.reconciler.reconcile_once()
+    self.assertIn(('w1', 'crashed'), actions)
+    self.assertFalse(self.backend.is_running('w1'))
+    self.assertEqual(self.backend.start_count('w1'), 1)
+    self.assertEqual(self._status('w1'), 'CRASHED')
+    self.assertEqual(self._restart_count('w1'), 1)
 
+    # Phase 2: once the backoff window has elapsed, it is restarted.
+    self._set('w1', last_exit_at=datetime.now(timezone.utc) - timedelta(seconds=120))
+    self.reconciler.reconcile_once()
     self.assertTrue(self.backend.is_running('w1'))
     self.assertEqual(self.backend.start_count('w1'), 2)
 
@@ -152,6 +190,49 @@ class TestReconcileBackoff(_ReconcilerTestBase):
     )
     self.reconciler.reconcile_once()
     self.assertEqual(self.backend.start_count('w1'), 1)
+
+  def test_instant_crash_is_not_hot_restarted(self):
+    # Regression: a worker that dies the instant it starts must not respawn on
+    # every pass. The first pass after the death records the crash; the immediate
+    # next pass is still inside the backoff window and must NOT restart.
+    self.client.request_start('example_worker', worker_key='w1')
+    self.reconciler.reconcile_once()  # start #1
+    self.backend.crash('w1')
+
+    self.assertIn(('w1', 'crashed'), self.reconciler.reconcile_once())
+    self.assertEqual(self.backend.start_count('w1'), 1)  # crash recorded, not restarted
+
+    self.assertEqual(self.reconciler.reconcile_once(), [])  # still in backoff
+    self.assertEqual(self.backend.start_count('w1'), 1)
+
+  def test_repeated_instant_crashes_escalate_restart_count(self):
+    # Regression: previously every respawn reset restart_count to 0, so the
+    # exponential backoff was pinned at its first level forever. Across restart
+    # cycles the counter must accumulate.
+    self.client.request_start('example_worker', worker_key='w1')
+    self.reconciler.reconcile_once()  # start #1, restart_count 0
+
+    counts = []
+    for _ in range(4):
+      self.backend.crash('w1')
+      self.reconciler.reconcile_once()  # record crash (restart_count += 1)
+      counts.append(self._restart_count('w1'))
+      # Pretend the (escalating) backoff window has elapsed so the next pass restarts.
+      self._set('w1', last_exit_at=datetime.now(timezone.utc) - timedelta(seconds=3600))
+      self.reconciler.reconcile_once()  # restart, reset_backoff=False -> count preserved
+
+    self.assertEqual(counts, [1, 2, 3, 4])
+
+  def test_backoff_resets_once_worker_proves_healthy(self):
+    # A worker that is observed alive a full pass after its spawn has proven
+    # healthy; its accumulated crash backoff must be cleared.
+    self.client.request_start('example_worker', worker_key='w1')
+    self.reconciler.reconcile_once()  # start, alive
+    self._set('w1', restart_count=3)  # pretend it had crashed a few times before
+
+    actions = self.reconciler.reconcile_once()  # alive + RUNNING + count>0 -> reset
+    self.assertIn(('w1', 'reset_backoff'), actions)
+    self.assertEqual(self._restart_count('w1'), 0)
 
 
 class TestReconcilerLoop(_ReconcilerTestBase):
