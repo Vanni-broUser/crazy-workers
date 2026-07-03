@@ -22,6 +22,7 @@
 ```
 tests/
   base.py                   # BaseTestCase with process leak detection
+  test_params.py            # crazy_workers/params.py (worker-side parse_params)
   core/
     test_engine.py          # crazy_workers/core/engine.py
     test_recovery.py        # crazy_workers/core/recovery.py

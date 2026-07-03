@@ -41,9 +41,11 @@ pip install .
 
 ```python
 # workers/my_worker.py
-import json, sys, time
+import time
 
-params = json.loads(sys.argv[1]) if len(sys.argv) > 1 else {}
+from crazy_workers import parse_params
+
+params = parse_params()
 duration = params.get('duration', 60)
 
 for _ in range(duration):
@@ -141,14 +143,27 @@ Closes the database connection and clears internal process references. Does **no
 
 ## Worker Script Contract
 
-A worker receives its parameters as a JSON string in `sys.argv[1]`:
+A worker receives its parameters as a JSON string in `sys.argv[1]`. Use
+`parse_params` instead of decoding it by hand:
 
 ```python
-import json, sys
+from crazy_workers import parse_params
 
-params = json.loads(sys.argv[1]) if len(sys.argv) > 1 else {}
+params = parse_params()
 # ... do work ...
 ```
+
+Without arguments it is lenient: a worker launched with no parameters gets
+`{}`. Pass `required=` to abort before any real work when a parameter the
+worker cannot run without is missing or empty — the worker exits with code 1
+and a message on stderr:
+
+```python
+params = parse_params(required=('device_id', 'output_dir'))
+```
+
+`parse_params(argv=...)` accepts an explicit argv list, which makes the
+parsing trivially testable without patching `sys.argv`.
 
 A worker is a separate process, so it cannot be handed a live object (e.g. a DB
 connection). Pass **configuration** instead: the manager's `worker_env` (and any

@@ -1,13 +1,11 @@
-import json
 import logging
-import sys
 import time
 
-from crazy_workers import WorkerManager
+from crazy_workers import WorkerManager, parse_params
 
 
 def main():
-  params = json.loads(sys.argv[1]) if len(sys.argv) > 1 else {}
+  params = parse_params()
   child_type = params.get('child_type', 'example_worker')
   num_children = params.get('num_children', 2)
   workers_dir = params.get('workers_dir', '.')

@@ -1,11 +1,12 @@
-import json
 import logging
 import sys
 import time
 
+from crazy_workers import parse_params
+
 
 def main():
-  params = json.loads(sys.argv[1]) if len(sys.argv) > 1 else {}
+  params = parse_params()
   interval = params.get('interval', 5)
   message = params.get('message', 'Infinite worker pulsing...')
 

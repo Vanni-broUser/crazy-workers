@@ -5,16 +5,17 @@ Instead crazy_workers injects the connection URL via worker_env as DATABASE_URL,
 and the worker opens its own connection to it.
 """
 
-import json
 import os
 import sys
 import time
 from datetime import datetime, timezone
 from sqlalchemy import create_engine, text
 
+from crazy_workers import parse_params
+
 
 def main():
-  params = json.loads(sys.argv[1]) if len(sys.argv) > 1 else {}
+  params = parse_params()
   worker_key = params.get('worker_key', 'db_writer')
   iterations = params.get('iterations', 3)
   interval = params.get('interval', 1)
