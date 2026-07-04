@@ -35,8 +35,7 @@ class Storage:
       self._owns_engine = False
     else:
       url = db_url if db_url else f'sqlite:///{db_path}'
-      connect_args = {'timeout': 30} if url.startswith('sqlite') else {}
-      self.engine = create_engine(url, connect_args=connect_args)
+      self.engine = create_engine(url, connect_args=self._connect_args_for(url))
       self._owns_engine = True
 
     # The tuning below registers engine-level listeners; on a shared engine more
@@ -50,6 +49,22 @@ class Storage:
     self.Session = sessionmaker(bind=self.engine)
     if create_tables:
       self._ensure_tables()
+
+  @staticmethod
+  def _connect_args_for(url):
+    if url.startswith('sqlite'):
+      return {'timeout': 30}
+    if url.startswith('postgresql'):
+      # The reconciler writes timestamps as aware UTC (datetime.now(timezone.utc))
+      # but reads them back from a naive DateTime column, assuming UTC. If the DB
+      # session's TimeZone is not UTC — e.g. the container sets TZ=Europe/Rome —
+      # Postgres converts aware values to local wall-clock on write, so they read
+      # back offset by the local UTC offset. That poisons the crash-backoff math:
+      # a crash looks like it happens hours in the future and the worker sits in
+      # backoff until wall-clock catches up. Pin every session to UTC so the
+      # round-trip is lossless regardless of the container's TZ.
+      return {'options': '-c timezone=utc'}
+    return {}
 
   def _install_sqlite_tuning(self):
     @event.listens_for(self.engine, 'connect')
