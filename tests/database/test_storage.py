@@ -3,6 +3,7 @@ import shutil
 import tempfile
 import unittest
 from sqlalchemy import create_engine, inspect, text
+from unittest.mock import MagicMock, patch
 
 from crazy_workers.database.schema import Worker, WorkerStatus
 from crazy_workers.database.storage import Storage
@@ -109,3 +110,36 @@ class TestStorageBackends(unittest.TestCase):
 
     storage.dispose()
     engine.dispose()
+
+
+class TestStorageSessionTimezone(unittest.TestCase):
+  """Guards the fix for the crash-backoff timezone poisoning.
+
+  The reconciler stores aware-UTC timestamps in a naive DateTime column and reads
+  them back as UTC. A Postgres session whose TimeZone is not UTC (e.g. a container
+  running TZ=Europe/Rome) would offset the round-trip and park crashed workers in
+  a multi-hour backoff, so every Postgres session must be pinned to UTC.
+  """
+
+  def test_postgres_url_pins_session_to_utc(self):
+    with patch('crazy_workers.database.storage.create_engine') as mock_create_engine:
+      mock_create_engine.return_value = MagicMock()
+      Storage(db_url='postgresql://u:p@h:5432/db', create_tables=False)
+
+    options = mock_create_engine.call_args.kwargs['connect_args'].get('options', '')
+    self.assertIn('timezone', options.lower())
+    self.assertIn('utc', options.lower())
+
+  def test_sqlite_url_keeps_timeout_and_sets_no_timezone(self):
+    with patch('crazy_workers.database.storage.create_engine') as mock_create_engine:
+      # dialect.name must not equal 'sqlite' or the mock hits the sqlite tuning path.
+      mock_create_engine.return_value = MagicMock()
+      Storage(db_url='sqlite:///x.db', create_tables=False)
+
+    connect_args = mock_create_engine.call_args.kwargs['connect_args']
+    self.assertEqual(connect_args, {'timeout': 30})
+
+  def test_connect_args_for_helper(self):
+    self.assertEqual(Storage._connect_args_for('sqlite:///a.db'), {'timeout': 30})
+    self.assertEqual(Storage._connect_args_for('postgresql://u@h/d'), {'options': '-c timezone=utc'})
+    self.assertEqual(Storage._connect_args_for('mysql://u@h/d'), {})
