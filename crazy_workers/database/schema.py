@@ -51,11 +51,14 @@ class Worker(Base):
   # Crash backoff bookkeeping: restart_count grows on each failed/crashed spawn
   # and resets on a successful start; last_exit_at timestamps the latest death.
   restart_count = Column(Integer, nullable=False, default=0)
-  last_exit_at = Column(DateTime, nullable=True)
-  last_started_at: datetime = Column(DateTime, nullable=True)
-  last_stopped_at: datetime = Column(DateTime, nullable=True)
-  created_at = Column(DateTime, server_default=func.now())
-  updated_at = Column(DateTime, onupdate=func.now())
+  # Timezone-aware (TIMESTAMPTZ on Postgres): the stored instant carries its
+  # offset, so the crash-backoff comparison is correct regardless of the DB
+  # session or container TZ. See storage.py for the belt-and-suspenders UTC pin.
+  last_exit_at = Column(DateTime(timezone=True), nullable=True)
+  last_started_at: datetime = Column(DateTime(timezone=True), nullable=True)
+  last_stopped_at: datetime = Column(DateTime(timezone=True), nullable=True)
+  created_at = Column(DateTime(timezone=True), server_default=func.now())
+  updated_at = Column(DateTime(timezone=True), onupdate=func.now())
 
   def to_dict(self):
     return {

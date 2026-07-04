@@ -143,3 +143,17 @@ class TestStorageSessionTimezone(unittest.TestCase):
     self.assertEqual(Storage._connect_args_for('sqlite:///a.db'), {'timeout': 30})
     self.assertEqual(Storage._connect_args_for('postgresql://u@h/d'), {'options': '-c timezone=utc'})
     self.assertEqual(Storage._connect_args_for('mysql://u@h/d'), {})
+
+
+class TestSchemaTimezoneAware(unittest.TestCase):
+  """The datetime columns must be timezone-aware (TIMESTAMPTZ on Postgres).
+
+  A naive column stores wall-clock in the session's TimeZone; read back as UTC it
+  is offset by the local UTC offset, which is what poisoned the crash backoff.
+  Aware columns store the instant with its offset, so the round-trip is correct
+  regardless of session or container TZ.
+  """
+
+  def test_datetime_columns_are_timezone_aware(self):
+    for name in ('last_exit_at', 'last_started_at', 'last_stopped_at', 'created_at', 'updated_at'):
+      self.assertTrue(Worker.__table__.c[name].type.timezone, f'{name} must be timezone-aware')

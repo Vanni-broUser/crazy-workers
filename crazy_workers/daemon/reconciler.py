@@ -141,8 +141,9 @@ class Reconciler:
     exponent = min(row['restart_count'], _BACKOFF_MAX_EXPONENT)
     delay = min(_BACKOFF_BASE_SECONDS * (2**exponent), _BACKOFF_MAX_SECONDS)
     last_exit = row['last_exit_at']
-    # last_exit_at is stored as UTC wall-clock; coerce naive values read back
-    # from the DB to aware UTC so the comparison never mixes naive and aware.
+    # last_exit_at is a timezone-aware column (TIMESTAMPTZ) so Postgres hands
+    # back an aware value. SQLite has no tz type and returns naive UTC, so coerce
+    # those to aware UTC — the comparison must never mix naive and aware.
     if last_exit.tzinfo is None:
       last_exit = last_exit.replace(tzinfo=timezone.utc)
     return datetime.now(timezone.utc) < last_exit + timedelta(seconds=delay)
