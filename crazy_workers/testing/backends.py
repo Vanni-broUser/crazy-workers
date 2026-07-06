@@ -47,6 +47,14 @@ class FakeBackend(ProcessBackend):
   def is_alive(self, *, pid, worker_key):
     return pid in self._alive_pids and self._pid_to_key.get(pid) == worker_key
 
+  def spawned_parameters(self, *, pid, worker_key):
+    if not self.is_alive(pid=pid, worker_key=worker_key):
+      return None
+    for spawn in reversed(self.spawns):
+      if spawn['pid'] == pid:
+        return spawn['parameters']
+    return None
+
   def terminate(self, *, pid, worker_key, handle=None, exclude_pids=None):
     self._alive_pids.discard(pid)
 

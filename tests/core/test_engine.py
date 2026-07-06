@@ -9,6 +9,7 @@ from crazy_workers.core.engine import (
   get_running_process,
   is_process_running,
   is_worker_process,
+  read_spawned_parameters,
   resolve_system_pid,
   terminate_process,
   worker_key_token,
@@ -208,6 +209,45 @@ class TestEngine(BaseTestCase):
     mock_proc.cmdline.side_effect = psutil.AccessDenied(pid=123)
     with patch('crazy_workers.core.engine.get_running_process', return_value=mock_proc):
       self.assertFalse(is_worker_process(123, 'identity_key'))
+
+  def _spawn_tagged_sleeper(self, worker_key, params_arg):
+    token = worker_key_token(worker_key)
+    return subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(10)', token, params_arg])
+
+  def test_read_spawned_parameters_dead_pid(self):
+    self.assertIsNone(read_spawned_parameters(99999999, 'identity_key'))
+
+  def test_read_spawned_parameters_from_live_process(self):
+    proc = self._spawn_tagged_sleeper('identity_key', '{"duration": 30, "mode": "fast"}')
+    try:
+      self.assertEqual(read_spawned_parameters(proc.pid, 'identity_key'), {'duration': 30, 'mode': 'fast'})
+      # A different key must NOT expose the same process's parameters.
+      self.assertIsNone(read_spawned_parameters(proc.pid, 'other_key'))
+    finally:
+      proc.terminate()
+      proc.wait()
+
+  def test_read_spawned_parameters_unparsable_tail(self):
+    proc = self._spawn_tagged_sleeper('identity_key', 'not-json')
+    try:
+      self.assertIsNone(read_spawned_parameters(proc.pid, 'identity_key'))
+    finally:
+      proc.terminate()
+      proc.wait()
+
+  def test_read_spawned_parameters_non_dict_tail(self):
+    proc = self._spawn_tagged_sleeper('identity_key', '42')
+    try:
+      self.assertIsNone(read_spawned_parameters(proc.pid, 'identity_key'))
+    finally:
+      proc.terminate()
+      proc.wait()
+
+  def test_read_spawned_parameters_cmdline_unreadable(self):
+    mock_proc = MagicMock(spec=psutil.Process)
+    mock_proc.cmdline.side_effect = psutil.AccessDenied(pid=123)
+    with patch('crazy_workers.core.engine.get_running_process', return_value=mock_proc):
+      self.assertIsNone(read_spawned_parameters(123, 'identity_key'))
 
   def test_terminate_unexpected_exception_reraised(self):
     mock_proc = MagicMock(spec=psutil.Process)

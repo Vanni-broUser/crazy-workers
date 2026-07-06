@@ -25,6 +25,8 @@ class Reconciler:
   | RUNNING  | no    | RUNNING         | record crash (mark CRASHED, +restart_count)|
   | RUNNING  | no    | other           | start (skipped while in backoff)           |
   | RUNNING  | yes   | RUNNING         | noop (reset backoff once proven healthy)   |
+  | RUNNING* | yes   | RUNNING         | *params diverged: recycle (stop; next pass |
+  |          |       |                 | restarts with the parameters now in the DB)|
   | RUNNING  | yes   | other           | heal observed status to RUNNING            |
   | STOPPED  | yes   | -               | stop                                       |
   | STOPPED  | no    | RUNNING/CRASHED | heal stale observed status to STOPPED      |
@@ -37,6 +39,16 @@ class Reconciler:
   worker would respawn at full loop speed forever. Instead the first pass records
   the death (CRASHED + a bumped restart_count), and a later pass restarts it once
   the exponential backoff has elapsed.
+
+  Parameter drift gets the same two-pass treatment. A client can rewrite a
+  worker's ``parameters`` while it is RUNNING; the process keeps its spawn-time
+  argv and would silently run with the old behaviour forever while ``status``
+  shows the new spec. Every pass therefore asks the backend what the live
+  process was actually spawned with and, when that diverges from the DB spec,
+  stops the worker — desired stays RUNNING, so the next pass restarts it with
+  the current parameters. A backend that cannot tell (unreadable command line)
+  answers None, which is never treated as divergence: recycling must act on
+  evidence, not on a guess.
   """
 
   def __init__(self, manager, interval=2.0):
@@ -128,12 +140,22 @@ class Reconciler:
         # Process is up but the observed status drifted (e.g. left STARTING). Heal it.
         self._mark_running(row['worker_key'])
         return 'mark_running'
+      if self._parameters_diverged(row):
+        # Stop only: desired stays RUNNING, so the next pass restarts the worker
+        # with the parameters now in the DB (see the class docstring).
+        logger.info('Reconcile: parameters changed for %s; recycling', row['worker_key'])
+        self.manager.stop_worker(row['worker_key'])
+        return 'recycle'
       if row['restart_count']:
         # Alive a full pass after its last spawn — proven healthy. Clear the crash
         # backoff so a future crash starts counting (and backing off) from zero.
         self._reset_backoff(row['worker_key'])
         return 'reset_backoff'
     return None
+
+  def _parameters_diverged(self, row):
+    spawned = self.manager.backend.spawned_parameters(pid=row['pid'], worker_key=row['worker_key'])
+    return spawned is not None and spawned != (row['parameters'] or {})
 
   def _in_backoff(self, row):
     if not row['last_exit_at'] or row['status'] != WorkerStatus.CRASHED:

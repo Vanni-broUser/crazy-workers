@@ -13,7 +13,7 @@ import os
 import subprocess
 import sys
 
-from .engine import is_worker_process, terminate_process, worker_key_token
+from .engine import is_worker_process, read_spawned_parameters, terminate_process, worker_key_token
 
 
 logger = logging.getLogger('crazy_workers')
@@ -46,6 +46,10 @@ class ProcessBackend:
 
   def is_alive(self, *, pid, worker_key):
     """True only if `pid` is alive AND still belongs to `worker_key` (PID-reuse safe)."""
+    raise NotImplementedError
+
+  def spawned_parameters(self, *, pid, worker_key):
+    """Parameters the live worker was spawned with, or None if unknowable."""
     raise NotImplementedError
 
   def terminate(self, *, pid, worker_key, handle=None, exclude_pids=None):
@@ -92,6 +96,9 @@ class SubprocessBackend(ProcessBackend):
 
   def is_alive(self, *, pid, worker_key):
     return is_worker_process(pid, worker_key)
+
+  def spawned_parameters(self, *, pid, worker_key):
+    return read_spawned_parameters(pid, worker_key)
 
   def terminate(self, *, pid, worker_key, handle=None, exclude_pids=None):
     popen = handle.process if handle else None
