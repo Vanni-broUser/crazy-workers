@@ -1,3 +1,4 @@
+import json
 import logging
 import os
 import psutil
@@ -42,6 +43,32 @@ def is_worker_process(pid, worker_key):
   except (psutil.Error, OSError):
     return False
   return worker_key_token(worker_key) in cmdline
+
+
+def read_spawned_parameters(pid, worker_key):
+  """Parameters the live worker process was spawned with, or None if unknown.
+
+  The spawn command line carries the parameters as its final JSON argument, so
+  a live process can be asked what it is actually running with — the DB spec
+  may have moved on since. Returns None (never {}) whenever the answer is
+  unknowable: dead PID, a process without worker_key's identity token, or an
+  unreadable/unparsable command line. Callers use this to detect parameter
+  drift, and a guess must not be mistaken for 'spawned with no parameters'.
+  """
+  proc = get_running_process(pid)
+  if proc is None:
+    return None
+  try:
+    cmdline = proc.cmdline()
+  except (psutil.Error, OSError):
+    return None
+  if worker_key_token(worker_key) not in cmdline:
+    return None
+  try:
+    parameters = json.loads(cmdline[-1])
+  except ValueError:
+    return None
+  return parameters if isinstance(parameters, dict) else None
 
 
 def get_running_process(pid):

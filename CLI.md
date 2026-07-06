@@ -67,6 +67,11 @@ crazy-workers start
 | `--key KEY` | Unique key for this instance. Defaults to `worker_type`. |
 | `--params JSON` | JSON string passed to the worker as `sys.argv[1]`. |
 
+Re-running `start` on a worker that is already RUNNING updates its spec: if the
+new `--params` differ from the ones the live process was spawned with, the
+daemon recycles it (stop, then restart with the new parameters) within a couple
+of reconcile passes. Identical parameters leave the process untouched.
+
 ---
 
 ### `stop`

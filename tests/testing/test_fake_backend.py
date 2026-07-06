@@ -16,6 +16,8 @@ class TestProcessBackendContract(unittest.TestCase):
     with self.assertRaises(NotImplementedError):
       backend.is_alive(pid=1, worker_key='k')
     with self.assertRaises(NotImplementedError):
+      backend.spawned_parameters(pid=1, worker_key='k')
+    with self.assertRaises(NotImplementedError):
       backend.terminate(pid=1, worker_key='k')
 
 
@@ -64,6 +66,17 @@ class TestFakeBackend(unittest.TestCase):
     self.assertEqual(set(self.backend.running_keys), {'2'})
     self.assertEqual(self.backend.parameters_for('2'), {'k': '2'})
     self.assertIsNone(self.backend.parameters_for('nope'))
+
+  def test_spawned_parameters_of_live_process(self):
+    handle = self._spawn('1', 'register')
+    self.assertEqual(self.backend.spawned_parameters(pid=handle.pid, worker_key='1'), {'k': '1'})
+    # stesso pid ma chiave diversa -> nessuna risposta
+    self.assertIsNone(self.backend.spawned_parameters(pid=handle.pid, worker_key='other'))
+
+  def test_spawned_parameters_of_dead_process(self):
+    handle = self._spawn('1', 'register')
+    self.backend.crash('1')
+    self.assertIsNone(self.backend.spawned_parameters(pid=handle.pid, worker_key='1'))
 
   def test_make_test_backend_unknown_mode(self):
     with self.assertRaises(ValueError):

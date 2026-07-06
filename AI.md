@@ -49,8 +49,16 @@ tests/
       test_starter.py       # crazy_workers/cli/commands/starter.py
       test_stopper.py       # crazy_workers/cli/commands/stopper.py
       test_params.py        # crazy_workers/cli/commands/params.py
+  client/
+    test_client.py          # crazy_workers/client.py (control-plane WorkerClient)
+  daemon/
+    test_main.py            # crazy_workers/daemon/__main__.py and runner.py
+    test_reconciler.py      # crazy_workers/daemon/reconciler.py (incl. parameter-drift recycle)
   database/
     test_storage.py         # crazy_workers/database/storage.py
+  testing/
+    test_fake_backend.py    # crazy_workers/testing/backends.py (FakeBackend contract)
+    test_polling.py         # crazy_workers/testing/polling.py
   integration/              # Full-stack tests with real processes
     test_resilience.py      # Kill/recovery/log/path-traversal scenarios
     test_nested_workers.py  # Parent-child worker scenarios

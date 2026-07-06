@@ -235,6 +235,54 @@ class TestReconcileBackoff(_ReconcilerTestBase):
     self.assertEqual(self._restart_count('w1'), 0)
 
 
+class TestReconcileParameterDrift(_ReconcilerTestBase):
+  def test_changed_params_recycle_then_restart_with_new_params(self):
+    # Regression: request_start with new params on a RUNNING worker used to
+    # update the DB spec only — the process kept its spawn-time argv while
+    # status showed the new parameters.
+    self.client.request_start('example_worker', worker_key='w1', parameters={'mode': 'old'})
+    self.reconciler.reconcile_once()
+    self.assertEqual(self.backend.parameters_for('w1'), {'mode': 'old'})
+
+    self.client.request_start('example_worker', worker_key='w1', parameters={'mode': 'new'})
+
+    # Phase 1: divergence detected, worker stopped (desired stays RUNNING).
+    actions = self.reconciler.reconcile_once()
+    self.assertIn(('w1', 'recycle'), actions)
+    self.assertFalse(self.backend.is_running('w1'))
+    self.assertEqual(self._status('w1'), 'STOPPED')
+
+    # Phase 2: restarted with the parameters now in the DB.
+    actions = self.reconciler.reconcile_once()
+    self.assertIn(('w1', 'start'), actions)
+    self.assertTrue(self.backend.is_running('w1'))
+    self.assertEqual(self.backend.parameters_for('w1'), {'mode': 'new'})
+
+  def test_unchanged_params_do_not_recycle(self):
+    self.client.request_start('example_worker', worker_key='w1', parameters={'mode': 'same'})
+    self.reconciler.reconcile_once()
+
+    self.client.request_start('example_worker', worker_key='w1', parameters={'mode': 'same'})
+    actions = self.reconciler.reconcile_once()
+
+    self.assertEqual(actions, [])
+    self.assertEqual(self.backend.start_count('w1'), 1)
+
+  def test_unknown_spawn_parameters_never_recycle(self):
+    # A backend that cannot read the live command line answers None; that must
+    # not be mistaken for divergence, or healthy workers get recycled on a guess.
+    self.client.request_start('example_worker', worker_key='w1', parameters={'mode': 'old'})
+    self.reconciler.reconcile_once()
+    self.backend.spawned_parameters = lambda **_: None
+
+    self.client.request_start('example_worker', worker_key='w1', parameters={'mode': 'new'})
+    actions = self.reconciler.reconcile_once()
+
+    self.assertEqual(actions, [])
+    self.assertTrue(self.backend.is_running('w1'))
+    self.assertEqual(self.backend.start_count('w1'), 1)
+
+
 class TestReconcilerLoop(_ReconcilerTestBase):
   def test_run_forever_runs_until_stopped(self):
     calls = []
