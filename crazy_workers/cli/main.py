@@ -39,8 +39,11 @@ def _build_parser():
 
   subparsers = parser.add_subparsers(dest='command', help='Commands')
 
-  status_parser = subparsers.add_parser('status', help='Show workers (desired vs actual) and the target DB')
-  status_parser.add_argument('--json', action='store_true', help='Output workers as JSON to stdout')
+  status_parser = subparsers.add_parser(
+    'status', help='Show workers (effective status; older stopped rows truncated) and the target DB'
+  )
+  status_parser.add_argument('--json', action='store_true', help='Output all workers as JSON to stdout')
+  status_parser.add_argument('--all', action='store_true', help='Show every stopped worker instead of the latest few')
 
   start_parser = subparsers.add_parser('start', help='Request a worker to run (interactive if type missing)')
   start_parser.add_argument('worker_type', nargs='?', help='The type (filename) of worker to start')
@@ -92,7 +95,7 @@ def main():
   try:
     with _build_client(workers_dir) as client:
       if args.command == 'status':
-        show_status(client, workers_dir, json_mode=getattr(args, 'json', False))
+        show_status(client, workers_dir, json_mode=getattr(args, 'json', False), show_all=getattr(args, 'all', False))
       elif args.command == 'start':
         params = _parse_params(args.params)
         if not start_worker(client, workers_dir, args.worker_type, worker_key=args.key, parameters=params):

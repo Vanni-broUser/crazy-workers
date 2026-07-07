@@ -31,13 +31,35 @@ If none of the above resolves to a valid directory, the CLI exits with an error.
 
 The observability hub. Shows the boot-restore state for the workers directory
 (enabled/not installed, the mechanism, and whether it runs at boot or at login),
-followed by a table of all workers tracked in the database — status, PID, last
+followed by a table of the workers tracked in the database — status, PID, last
 action timestamp, and parameters.
 
 ```bash
 crazy-workers status
+crazy-workers status --all
 crazy-workers --workers-dir /path/to/workers status
 ```
+
+| Option | Description |
+|--------|-------------|
+| `--all` | Show every stopped worker instead of the latest few. |
+| `--json` | Output all workers as JSON to stdout (never truncated, includes `desired_status`). |
+
+The `Status` column shows the **effective** state of each worker. When it
+diverges from the requested state, the daemon still has work to do and the row
+carries a pending note:
+
+- `RUNNING (stop requested)` — a stop was requested but the process is still
+  alive; if it never goes away, something is wrong with the stop.
+- `STOPPED (start pending)` — a start was requested and the daemon has not
+  spawned the process yet.
+- `CRASHED (restart pending)` — the daemon will restart it with backoff.
+
+Stopped workers are history, not activity: only the **2 most recently
+stopped** are shown and the remainder is collapsed into an explicit caption
+under the table (`… N more stopped workers hidden — use --all to show them`).
+Nothing is deleted — the full history stays in the database and `--all` (or
+`--json`) shows every row.
 
 Status colors: `green` = RUNNING, `cyan` = NEVER_STARTED, `yellow` = STARTING, `dim` = STOPPED, `bold red` = CRASHED.
 

@@ -10,8 +10,18 @@ from ...core.engine import resolve_system_pid
 from ..ui import console
 
 
-def show_status(client, workers_dir, json_mode=False):
-  """Observability hub: the target state store plus the worker table (desired vs actual)."""
+MAX_STOPPED_ROWS = 2
+
+
+def show_status(client, workers_dir, json_mode=False, show_all=False):
+  """Observability hub: the target state store plus the worker table.
+
+  The table shows each worker's effective status; when it diverges from the
+  desired state (a stop or restart the daemon has not resolved yet) the row
+  carries a pending note. Settled stopped workers beyond the most recent
+  ``MAX_STOPPED_ROWS`` are hidden unless ``show_all`` is set. JSON mode always
+  emits every worker, including the ``desired_status`` field.
+  """
   workers = _with_system_pids(_merge_with_filesystem(client.list(), workers_dir))
 
   if json_mode:
@@ -23,7 +33,8 @@ def show_status(client, workers_dir, json_mode=False):
     console().print('[yellow]No workers found.[/yellow]')
     return workers
 
-  console().print(_build_table(workers))
+  visible, hidden = (workers, 0) if show_all else _truncate_stopped(workers)
+  console().print(_build_table(visible, hidden))
   return workers
 
 
@@ -80,6 +91,51 @@ def _with_system_pids(workers):
   return results
 
 
+def _truncate_stopped(workers):
+  """Keep the MAX_STOPPED_ROWS most recently stopped settled rows, hide the rest."""
+  hideable = [w for w in workers if _is_settled_stop(w)]
+  hidden = len(hideable) - MAX_STOPPED_ROWS
+  if hidden <= 0:
+    return workers, 0
+  recent = sorted(hideable, key=lambda w: w.get('last_stopped_at') or '', reverse=True)[:MAX_STOPPED_ROWS]
+  keep = {id(w) for w in recent}
+  return [w for w in workers if not _is_settled_stop(w) or id(w) in keep], hidden
+
+
+def _is_settled_stop(worker):
+  """STOPPED with no pending restart: history, not activity."""
+  return worker['status'] == 'STOPPED' and worker.get('desired_status') != 'RUNNING'
+
+
+def _pending_note(worker):
+  """The desired/actual divergence the daemon still has to resolve, if any."""
+  desired, status = worker.get('desired_status'), worker['status']
+  if desired == 'STOPPED' and status in ('RUNNING', 'STARTING'):
+    return 'stop requested'
+  if desired == 'RUNNING' and status == 'STOPPED':
+    return 'start pending'
+  if desired == 'RUNNING' and status in ('CRASHED', 'FAILED'):
+    return 'restart pending'
+  return None
+
+
+def _format_status(worker):
+  status = worker['status']
+  status_style = 'green' if status == 'RUNNING' else 'yellow'
+  if status in ('CRASHED', 'FAILED'):
+    status_style = 'bold red'
+  elif status == 'STOPPED':
+    status_style = 'dim'
+  elif status == 'NEVER_STARTED':
+    status_style = 'cyan'
+
+  cell = f'[{status_style}]{status}[/{status_style}]'
+  note = _pending_note(worker)
+  if note:
+    cell += f' [dim]({note})[/dim]'
+  return cell
+
+
 def _format_pid(worker):
   pid = worker.get('pid')
   system_pid = worker.get('system_pid')
@@ -90,34 +146,23 @@ def _format_pid(worker):
   return str(pid)
 
 
-def _build_table(workers):
-  table = Table(
-    title='[bold cyan]Workers — desired vs actual[/bold cyan]', border_style='cyan', header_style='bold magenta'
-  )
+def _build_table(workers, hidden=0):
+  table = Table(title='[bold cyan]Workers[/bold cyan]', border_style='cyan', header_style='bold magenta')
+  if hidden:
+    plural = 's' if hidden != 1 else ''
+    table.caption = f'… {hidden} more stopped worker{plural} hidden — use [bold]--all[/bold] to show them'
+    table.caption_style = 'dim italic'
   table.add_column('#', justify='right', style='dim')
   table.add_column('Key', style='bold')
   table.add_column('Type')
-  table.add_column('Desired', justify='center')
   table.add_column('Status', justify='center')
   table.add_column('PID', justify='right', style='green')
   table.add_column('Last Action', justify='center')
   table.add_column('Params', overflow='ellipsis')
 
   for i, w in enumerate(workers, 1):
-    status = w['status']
-    status_style = 'green' if status == 'RUNNING' else 'yellow'
-    if status in ('CRASHED', 'FAILED'):
-      status_style = 'bold red'
-    elif status == 'STOPPED':
-      status_style = 'dim'
-    elif status == 'NEVER_STARTED':
-      status_style = 'cyan'
-
-    desired = w.get('desired_status') or '-'
-    desired_style = 'green' if desired == 'RUNNING' else 'dim'
-
     last_action = '-'
-    if status == 'RUNNING' and w.get('last_started_at'):
+    if w['status'] == 'RUNNING' and w.get('last_started_at'):
       dt = datetime.fromisoformat(w['last_started_at'])
       last_action = f'[green]Started {dt.strftime("%H:%M:%S")}[/green]'
     elif w.get('last_stopped_at'):
@@ -132,8 +177,7 @@ def _build_table(workers):
       str(i),
       w['worker_key'] or '-',
       w['worker_type'],
-      f'[{desired_style}]{desired}[/{desired_style}]',
-      f'[{status_style}]{status}[/{status_style}]',
+      _format_status(w),
       _format_pid(w),
       last_action,
       params_str,
