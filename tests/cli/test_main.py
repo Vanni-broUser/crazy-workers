@@ -33,7 +33,7 @@ class TestCliMain(BaseTestCase):
           cli_main()
           output = fake_out.getvalue()
           self.assertIn('cli_test', output)
-          self.assertIn('RUNNING', output)  # desired column
+          self.assertIn('start pending', output)  # requested but not yet reconciled
 
   def test_cli_env_discovery(self):
     self._seed_request('example_worker', 'env_test')
@@ -107,6 +107,28 @@ class TestCliMain(BaseTestCase):
           output = fake_out.getvalue()
           self.assertIn('shared1', output)
           self.assertIn('shared DB', output)
+
+  def test_cli_status_all_flag(self):
+    with WorkerClient(db_url=self._sqlite_url(), create_tables=True) as client:
+      for i in range(4):
+        client.request_start('example_worker', worker_key=f'old_{i}')
+        client.request_stop(f'old_{i}')
+
+    def run_status(*extra):
+      argv = ['crazy-workers', '--workers-dir', self.workers_path, 'status', *extra]
+      with patch.dict(os.environ, {'COLUMNS': '220'}):
+        with patch('sys.argv', argv):
+          with patch('sys.stdout', new=StringIO()) as fake_out:
+            cli_main()
+      return fake_out.getvalue()
+
+    truncated = run_status()
+    self.assertIn('more stopped', truncated)
+    self.assertIn('--all', truncated)
+    full = run_status('--all')
+    self.assertNotIn('more stopped', full)
+    for i in range(4):
+      self.assertIn(f'old_{i}', full)
 
   def test_cli_status_json_flag(self):
     self._seed_request('example_worker', 'json_test')
