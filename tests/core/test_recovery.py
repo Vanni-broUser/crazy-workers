@@ -1,4 +1,5 @@
 import os
+import psutil
 from unittest.mock import patch
 
 from crazy_workers.core.recovery import RecoveryLock
@@ -63,6 +64,75 @@ class TestRecoveryLock(BaseTestCase):
 
     lock = RecoveryLock(path)
     self.assertFalse(lock.acquire())
+    os.remove(path)
+
+  def test_lock_stores_pid_and_create_time(self):
+    lock = RecoveryLock(self._lock_path())
+    self.assertTrue(lock.acquire())
+    with open(self._lock_path()) as f:
+      pid_str, _, create_time_str = f.read().partition(':')
+    self.assertEqual(int(pid_str), os.getpid())
+    self.assertAlmostEqual(float(create_time_str), psutil.Process(os.getpid()).create_time(), delta=1.0)
+    lock.release()
+
+  def test_live_lock_with_matching_create_time_not_broken(self):
+    lock1 = RecoveryLock(self._lock_path())
+    self.assertTrue(lock1.acquire())
+    self.assertFalse(RecoveryLock(self._lock_path()).acquire())
+    lock1.release()
+
+  def test_recycled_pid_lock_reacquired(self):
+    # Alive PID but a create_time from another life (container restart: the
+    # PID number exists again, the owning process does not).
+    path = self._lock_path()
+    stale_create_time = psutil.Process(os.getpid()).create_time() - 3600
+    with open(path, 'w') as f:
+      f.write(f'{os.getpid()}:{stale_create_time}')
+
+    lock = RecoveryLock(path)
+    self.assertTrue(lock.acquire())
+    lock.release()
+
+  def test_legacy_lock_older_than_process_reacquired(self):
+    # Legacy PID-only lock written "before" the current holder of that PID
+    # was born: the writer cannot be this process, so the lock is stale.
+    path = self._lock_path()
+    with open(path, 'w') as f:
+      f.write(str(os.getpid()))
+    before_birth = psutil.Process(os.getpid()).create_time() - 3600
+    os.utime(path, (before_birth, before_birth))
+
+    lock = RecoveryLock(path)
+    self.assertTrue(lock.acquire())
+    lock.release()
+
+  def test_invalid_create_time_lock_reacquired(self):
+    path = self._lock_path()
+    with open(path, 'w') as f:
+      f.write(f'{os.getpid()}:not-a-float')
+
+    lock = RecoveryLock(path)
+    self.assertTrue(lock.acquire())
+    lock.release()
+
+  def test_owner_gone_between_checks_reacquired(self):
+    path = self._lock_path()
+    with open(path, 'w') as f:
+      f.write(str(os.getpid()))
+
+    lock = RecoveryLock(path)
+    with patch('crazy_workers.core.recovery.psutil.Process', side_effect=psutil.NoSuchProcess(os.getpid())):
+      self.assertTrue(lock.acquire())
+    lock.release()
+
+  def test_uninspectable_owner_not_broken(self):
+    path = self._lock_path()
+    with open(path, 'w') as f:
+      f.write(f'{os.getpid()}:12345.0')
+
+    lock = RecoveryLock(path)
+    with patch('crazy_workers.core.recovery.psutil.Process', side_effect=psutil.AccessDenied(os.getpid())):
+      self.assertFalse(lock.acquire())
     os.remove(path)
 
   def test_reacquire_after_release(self):
