@@ -50,7 +50,7 @@ params = parse_params()
 duration = params.get('duration', 60)
 
 for _ in range(duration):
-    time.sleep(1)
+  time.sleep(1)
 ```
 
 ### 2. Manage it from Python
@@ -62,16 +62,16 @@ manager = WorkerManager('workers')
 
 # Start
 success, result = manager.start_worker(
-    'my_worker',
-    worker_key='job_1',
-    parameters={'duration': 30},
+  'my_worker',
+  worker_key='job_1',
+  parameters={'duration': 30},
 )
-print(result['pid'])   # OS process ID
+print(result['pid'])  # OS process ID
 print(result['status'])  # 'RUNNING'
 
 # List
 for w in manager.list_workers():
-    print(w['worker_key'], w['status'])
+  print(w['worker_key'], w['status'])
 
 # Stop
 manager.stop_worker('job_1')
@@ -188,28 +188,29 @@ and runs in-process. The backend is exposed as `manager.test` for assertions.
 ```python
 from crazy_workers import WorkerManager
 
+
 def test_starts_recorder_and_renamer():
-    manager = WorkerManager.for_testing('workers')  # FakeBackend, no processes
+  manager = WorkerManager.for_testing('workers')  # FakeBackend, no processes
 
-    manager.start_worker('recorder', worker_key='cam1', parameters={'device': 'cam1'})
-    manager.start_worker('renamer', worker_key='renamer_cam1', parameters={'output_dir': '/data/cam1'})
+  manager.start_worker('recorder', worker_key='cam1', parameters={'device': 'cam1'})
+  manager.start_worker('renamer', worker_key='renamer_cam1', parameters={'output_dir': '/data/cam1'})
 
-    assert manager.test.started_types == ['recorder', 'renamer']
-    assert manager.test.is_running('cam1')
-    assert manager.test.parameters_for('renamer_cam1') == {'output_dir': '/data/cam1'}
-    manager.dispose()
+  assert manager.test.started_types == ['recorder', 'renamer']
+  assert manager.test.is_running('cam1')
+  assert manager.test.parameters_for('renamer_cam1') == {'output_dir': '/data/cam1'}
+  manager.dispose()
 
 
 def test_recovery_restarts_a_crash():
-    manager = WorkerManager.for_testing('workers')
-    manager.start_worker('recorder', worker_key='cam1')
+  manager = WorkerManager.for_testing('workers')
+  manager.start_worker('recorder', worker_key='cam1')
 
-    manager.test.crash('cam1')      # simulate an unexpected death
-    manager.recover_workers()       # the real recovery path runs in-process
+  manager.test.crash('cam1')  # simulate an unexpected death
+  manager.recover_workers()  # the real recovery path runs in-process
 
-    assert manager.test.start_count('cam1') == 2
-    assert manager.test.is_running('cam1')
-    manager.dispose()
+  assert manager.test.start_count('cam1') == 2
+  assert manager.test.is_running('cam1')
+  manager.dispose()
 ```
 
 `workers_dir` must still contain the `<type>.py` files (`start_worker` checks
@@ -284,28 +285,29 @@ tests/
 ```python
 from crazy_workers import WorkerManager
 
+
 def create_app(db_engine, db_url):
-    app = Flask(__name__)
+  app = Flask(__name__)
 
-    manager = WorkerManager(
-        'workers',
-        engine=db_engine,                     # crazy_workers' tables live in YOUR database
-        worker_env={'DATABASE_URL': db_url},  # injected into every worker
-        # auto_recover=True (default): when the app boots, workers left RUNNING
-        # with a dead PID are restored automatically — no explicit call needed.
+  manager = WorkerManager(
+    'workers',
+    engine=db_engine,  # crazy_workers' tables live in YOUR database
+    worker_env={'DATABASE_URL': db_url},  # injected into every worker
+    # auto_recover=True (default): when the app boots, workers left RUNNING
+    # with a dead PID are restored automatically — no explicit call needed.
+  )
+
+  @app.route('/workers/start', methods=['POST'])
+  def start():
+    data = request.json
+    success, result = manager.start_worker(
+      data['worker_type'],
+      worker_key=data.get('worker_key'),
+      parameters=data.get('parameters', {}),
     )
+    return (jsonify(result), 200) if success else (jsonify({'error': result}), 400)
 
-    @app.route('/workers/start', methods=['POST'])
-    def start():
-        data = request.json
-        success, result = manager.start_worker(
-            data['worker_type'],
-            worker_key=data.get('worker_key'),
-            parameters=data.get('parameters', {}),
-        )
-        return (jsonify(result), 200) if success else (jsonify({'error': result}), 400)
-
-    return app
+  return app
 ```
 
 See [`example_app/app.py`](https://github.com/Vanni-broUser/crazy-workers/blob/main/example_app/app.py) for a complete example.

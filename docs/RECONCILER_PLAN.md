@@ -256,6 +256,7 @@ Si consiglia di rilasciare **C prima**, in produzione, e costruire **A** sopra.
 
 ```python
 import os
+
 ...
 db_url = os.environ.get('CRAZY_WORKERS_DB_URL')
 with WorkerManager(
@@ -263,7 +264,7 @@ with WorkerManager(
   create_dir=False,
   auto_recover=False,
   auto_boot=False,
-  db_url=db_url,            # se None → comportamento attuale (SQLite locale)
+  db_url=db_url,  # se None → comportamento attuale (SQLite locale)
   create_tables=db_url is None,  # con DB condiviso/owned, non emettere DDL
 ) as manager:
   ...
@@ -285,7 +286,7 @@ worker_manager = WorkerManager(
   engine=database_api.engine,
   worker_env={'DATABASE_URL': database_url or DATABASE_URL},
   create_tables=create_tables,
-  auto_boot=False,   # il recovery è già garantito da auto_recover in gunicorn
+  auto_boot=False,  # il recovery è già garantito da auto_recover in gunicorn
 )
 ```
 
@@ -340,7 +341,7 @@ con un advisory lock applicativo sul DB.
 I chiamanti usano un `WorkerClient` che tocca **solo** il DB:
 
 ```python
-client = WorkerClient(engine=...)          # o db_url=...
+client = WorkerClient(engine=...)  # o db_url=...
 client.request_start('register', worker_key='42', parameters={'device_id': 42})
 client.request_stop('42')
 client.list()
@@ -508,7 +509,7 @@ def main(argv=None):
     args.workers_dir,
     create_dir=False,
     auto_boot=False,
-    auto_recover=False,          # la riconciliazione sostituisce il recovery one-shot
+    auto_recover=False,  # la riconciliazione sostituisce il recovery one-shot
     db_url=args.db_url,
     create_tables=args.db_url is None,
   )
@@ -631,12 +632,11 @@ reconciler.
 
    ```python
    from src import get_worker_client
+
    ...
    worker_client = get_worker_client()
-   worker_client.request_start('register', worker_key=str(device_id),
-                               parameters={'device_id': device_id})
-   worker_client.request_start('renamer', worker_key=f'renamer_{device_id}',
-                               parameters={'output_dir': output_dir})
+   worker_client.request_start('register', worker_key=str(device_id), parameters={'device_id': device_id})
+   worker_client.request_start('renamer', worker_key=f'renamer_{device_id}', parameters={'output_dir': output_dir})
    return jsonify({'status': 'ok', 'message': 'Registrazione richiesta'})
    ```
 
@@ -770,8 +770,12 @@ Nuova revisione Alembic (es. `src/database/alembic/versions/008_worker_desired_s
 
 ```python
 def upgrade():
-  op.add_column('workers', sa.Column('desired_status', sa.Enum('RUNNING', 'STOPPED', name='desiredstatus'),
-                nullable=False, server_default='STOPPED'))
+  op.add_column(
+    'workers',
+    sa.Column(
+      'desired_status', sa.Enum('RUNNING', 'STOPPED', name='desiredstatus'), nullable=False, server_default='STOPPED'
+    ),
+  )
   op.add_column('workers', sa.Column('restart_count', sa.Integer(), nullable=False, server_default='0'))
   op.add_column('workers', sa.Column('last_exit_at', sa.DateTime(), nullable=True))
 
