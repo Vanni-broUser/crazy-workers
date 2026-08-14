@@ -9,7 +9,7 @@
 - **Testing Integrity**: Never modify the codebase solely to facilitate a test. If a test is difficult to write, refactor for better observability or improve the test setup.
 - **Linting & Formatting**: Always run `ruff check . --fix` and `ruff format .` after any code change.
 - **Testing**: Always run `pytest` after changes.
-- **Coverage**: Ensure total coverage stays above 95%. New code must be covered by tests. Each individual file must maintain a minimum coverage of 75%.
+- **Coverage**: Ensure total coverage stays above 90% (soglia della pipeline, in `pyproject.toml`). New code must be covered by tests. Each individual file must maintain a minimum coverage of 75%.
 - **Clean Tests**: Tests must be clean, readable, and strictly free of `print()` statements. Use assertions for verification.
 - **No Silent Exceptions**: Avoid broad `except Exception: pass` blocks. Catch only specific, expected exception types. Each exception handler must either log the error, propagate it, or have an explicit comment explaining why silence is correct.
 - **Documentation Maintenance**: After every development cycle, review and update `README.md`, `CLI.md`, and this file. Ensure all functional changes, new configurations, and architectural shifts are accurately reflected.
