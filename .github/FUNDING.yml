@@ -1,8 +1,1 @@
-# Mostra il bottone "Sponsor" sulla pagina della repo GitHub.
-# Docs: https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/customizing-your-repository/displaying-a-sponsor-button-in-your-repository
-
-# GitHub Sponsors (richiede il profilo Sponsors attivo su Vanni-broUser)
-github: [Vanni-broUser]
-
-# Stripe Payment Link (max 4 URL in totale, solo https://)
 custom: ["https://buy.stripe.com/dRmeVdbiw2bD1HN5jscZa00"]
