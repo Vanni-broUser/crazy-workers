@@ -417,9 +417,8 @@ crazy-workers is free and open-source (MIT). If it saves you time or powers your
 consider supporting its development:
 
 - **GitHub Sponsors** — recurring or one-time, 0% platform fee: https://github.com/sponsors/Vanni-broUser
-- **Stripe** — one-time card donation via secure checkout: _Stripe Payment Link (coming soon)_
+- **Stripe** — one-time card donation via secure checkout: https://buy.stripe.com/dRmeVdbiw2bD1HN5jscZa00
 - **⭐ Star the repo** — free, and it really helps visibility.
 
-> The Stripe link is configured via a [Payment Link](https://stripe.com/docs/payment-links).
-> Replace the placeholder above (and in [`.github/FUNDING.yml`](.github/FUNDING.yml)) with your real
-> `https://buy.stripe.com/...` URL once created.
+> The Stripe link is a [Payment Link](https://stripe.com/docs/payment-links); the same URL powers the
+> **Sponsor** button on GitHub via [`.github/FUNDING.yml`](.github/FUNDING.yml).
